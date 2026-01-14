@@ -13,7 +13,7 @@ class TokenProvider(Protocol):
         """Return the latest access token string."""
 
 
-@dataclass(slots=True)
+@dataclass
 class StaticTokenProvider:
     """Simple token provider that always returns the same token."""
 

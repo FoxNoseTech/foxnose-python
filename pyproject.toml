@@ -29,6 +29,7 @@ dependencies = [
   "pydantic>=2.6",
   "cryptography>=42.0.0",
   "typing-extensions>=4.8",
+  "eval-type-backport>=0.2.0; python_version < '3.10'",
 ]
 
 [project.optional-dependencies]

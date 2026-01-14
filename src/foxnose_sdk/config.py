@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Mapping, MutableMapping
 
 
-@dataclass(slots=True)
+@dataclass
 class RetryConfig:
     """
     Controls HTTP retry behavior for idempotent requests.
@@ -34,7 +34,7 @@ class RetryConfig:
 DEFAULT_USER_AGENT = "foxnose-sdk/0.1.0"
 
 
-@dataclass(slots=True)
+@dataclass
 class FoxnoseConfig:
     """
     General transport-level configuration shared by all clients.

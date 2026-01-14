@@ -6,7 +6,7 @@ from typing import Mapping, Protocol
 from ..errors import FoxnoseAuthError
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RequestData:
     """Immutable view of the outbound request used when applying auth."""
 

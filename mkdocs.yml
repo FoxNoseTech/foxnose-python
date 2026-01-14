@@ -1,0 +1,88 @@
+site_name: FoxNose Python SDK
+site_url: https://foxnosetech.github.io/foxnose-python/
+site_description: Official Python client for FoxNose Management and Flux APIs
+site_author: FoxNose
+
+repo_name: FoxNoseTech/foxnose-python
+repo_url: https://github.com/FoxNoseTech/foxnose-python
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_category_heading: true
+            members_order: source
+            docstring_style: google
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - User Guide:
+      - Authentication: authentication.md
+      - Management Client: management-client.md
+      - Flux Client: flux-client.md
+      - Error Handling: error-handling.md
+  - Examples: examples.md
+  - API Reference: api-reference.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/FoxNoseTech/foxnose-python
+    - icon: fontawesome/solid/globe
+      link: https://foxnose.net
+
+copyright: Copyright &copy; 2024-2026 FoxNose

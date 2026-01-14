@@ -8,7 +8,7 @@ class FoxnoseError(Exception):
     """Base class for all SDK errors."""
 
 
-@dataclass(slots=True)
+@dataclass
 class FoxnoseAPIError(FoxnoseError):
     """Raised when the API responds with an error status."""
 

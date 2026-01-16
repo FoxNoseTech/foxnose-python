@@ -200,7 +200,7 @@ class HttpTransport:
                         continue
                     self._raise_api_error(response)
                 return response
-            raise FoxnoseTransportError("Exceeded retry attempts")
+            raise AssertionError("unreachable")  # pragma: no cover
 
         def sync_loop() -> httpx.Response:
             for attempt in range(1, self._retry.attempts + 1):
@@ -225,7 +225,7 @@ class HttpTransport:
                         continue
                     self._raise_api_error(response)
                 return response
-            raise FoxnoseTransportError("Exceeded retry attempts")
+            raise AssertionError("unreachable")  # pragma: no cover
 
         return async_loop() if is_async else sync_loop()
 

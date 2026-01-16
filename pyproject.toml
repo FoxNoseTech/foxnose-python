@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
@@ -47,7 +48,7 @@ docs = [
 [project.urls]
 "Homepage" = "https://foxnose.net"
 "Source" = "https://github.com/FoxNoseTech/foxnose-python"
-"Documentation" = "https://docs.foxnose.net"
+"Documentation" = "https://foxnose-python.readthedocs.io"
 
 [tool.pytest.ini_options]
 addopts = "-q"

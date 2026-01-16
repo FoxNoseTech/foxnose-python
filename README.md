@@ -17,6 +17,16 @@ This is the official Python SDK for FoxNose Management and Flux APIs.
 - **Automatic retries** - Configurable retry with exponential backoff
 - **JWT authentication** - Built-in token refresh support
 
+## Documentation
+
+**SDK Documentation:** [foxnose-python.readthedocs.io](https://foxnose-python.readthedocs.io)
+
+**FoxNose Platform:**
+- [Product Documentation](https://foxnose.net/docs)
+- [Guides](https://foxnose.net/docs/guides)
+- [Management API Reference](https://foxnose.net/docs/management-api/v1/get-started)
+- [Flux API Reference](https://foxnose.net/docs/flux-api/v1/get-started)
+
 ## Installation
 
 ```bash
@@ -24,6 +34,8 @@ pip install foxnose-sdk
 ```
 
 ## Quick Start
+
+To get started, you'll need a FoxNose account. [Create one here](https://app.foxnose.net).
 
 ```python
 from foxnose_sdk.management import ManagementClient
@@ -74,12 +86,6 @@ client = FluxClient(
 resources = client.list_resources("blog-posts")
 client.close()
 ```
-
-## Documentation
-
-- [Getting Started](https://foxnosetech.github.io/foxnose-python/getting-started/)
-- [Authentication](https://foxnosetech.github.io/foxnose-python/authentication/)
-- [API Reference](https://foxnosetech.github.io/foxnose-python/api-reference/)
 
 ## Development
 

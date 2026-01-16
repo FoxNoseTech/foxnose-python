@@ -48,7 +48,7 @@ docs = [
 [project.urls]
 "Homepage" = "https://foxnose.net"
 "Source" = "https://github.com/FoxNoseTech/foxnose-python"
-"Documentation" = "https://docs.foxnose.net"
+"Documentation" = "https://foxnose-python.readthedocs.io"
 
 [tool.pytest.ini_options]
 addopts = "-q"

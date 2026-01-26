@@ -8,6 +8,7 @@ Official Python client for FoxNose Management and Flux APIs.
 - **Sync and async support** - Both synchronous and asynchronous clients available
 - **Automatic retries** - Configurable retry logic with exponential backoff
 - **JWT authentication** - Built-in support for JWT tokens with automatic refresh
+- **Flexible identifiers** - Pass string keys or model objects directly to any method
 - **Comprehensive coverage** - Access to all Management and Flux API endpoints
 
 ## Installation

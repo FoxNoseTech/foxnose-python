@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-26
+
+### Added
+
+- **Model objects as identifiers** — Management client methods now accept either string keys or corresponding model objects (e.g. `FolderSummary`, `ResourceSummary`) wherever a `*_key` parameter is used. This eliminates the need to manually extract `.key` from objects returned by the API.
+- `_resolve_key()` helper function for extracting string keys from model objects.
+- 13 type aliases for method parameters: `FolderRef`, `ResourceRef`, `RevisionRef`, `ComponentRef`, `SchemaVersionRef`, `OrgRef`, `ProjectRef`, `EnvironmentRef`, `ManagementRoleRef`, `FluxRoleRef`, `ManagementAPIKeyRef`, `FluxAPIKeyRef`, `APIRef`.
+
+## [0.1.0] - 2026-01-14
+
 ### Added
 
 - Initial release of the FoxNose Python SDK
@@ -42,11 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling guide
 - Code examples
 
-## [0.1.0] - 2026-01-14
-
-### Added
-
-- Initial public release
-
-[Unreleased]: https://github.com/foxnose/python-sdk/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/foxnose/python-sdk/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/foxnose/python-sdk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/foxnose/python-sdk/releases/tag/v0.1.0

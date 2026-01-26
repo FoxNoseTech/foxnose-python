@@ -64,6 +64,32 @@ async def main():
 asyncio.run(main())
 ```
 
+### Using Model Objects as Identifiers
+
+Instead of extracting `.key` from every returned object, pass objects directly into subsequent calls:
+
+```python
+# Get a folder object and use it directly
+folder = client.get_folder("blog-posts")
+
+# Pass the folder object — no need for folder.key
+resources = client.list_resources(folder)
+
+# Chain objects through a full workflow
+resource = client.create_resource(folder, {"title": "New Article"})
+revision = client.create_revision(folder, resource, {
+    "title": "Draft Content",
+    "body": "...",
+})
+client.publish_revision(folder, resource, revision)
+
+# Works with all entity types
+org = client.get_organization("org-key")
+projects = client.list_projects(org)
+project = projects.results[0]
+envs = client.list_environments(org, project)
+```
+
 ### Resources and Revisions
 
 **File:** `examples/resources_and_revisions.py`

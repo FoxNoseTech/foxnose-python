@@ -64,6 +64,30 @@ Complete API reference for the FoxNose Python SDK.
       show_source: false
       heading_level: 4
 
+## Reference Type Aliases
+
+The following type aliases are used in method signatures and can be imported for your own type annotations. Each accepts either a string key or the corresponding model object.
+
+| Type alias | Definition |
+|------------|------------|
+| `FolderRef` | `Union[str, FolderSummary]` |
+| `ResourceRef` | `Union[str, ResourceSummary]` |
+| `RevisionRef` | `Union[str, RevisionSummary]` |
+| `ComponentRef` | `Union[str, ComponentSummary]` |
+| `SchemaVersionRef` | `Union[str, SchemaVersionSummary]` |
+| `OrgRef` | `Union[str, OrganizationSummary]` |
+| `ProjectRef` | `Union[str, ProjectSummary]` |
+| `EnvironmentRef` | `Union[str, EnvironmentSummary]` |
+| `ManagementRoleRef` | `Union[str, ManagementRoleSummary]` |
+| `FluxRoleRef` | `Union[str, FluxRoleSummary]` |
+| `ManagementAPIKeyRef` | `Union[str, ManagementAPIKeySummary]` |
+| `FluxAPIKeyRef` | `Union[str, FluxAPIKeySummary]` |
+| `APIRef` | `Union[str, APIInfo]` |
+
+```python
+from foxnose_sdk import FolderRef, ResourceRef, RevisionRef
+```
+
 ## Errors
 
 ::: foxnose_sdk.errors.FoxnoseAPIError

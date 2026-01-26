@@ -11,6 +11,11 @@ from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import AsyncFluxClient
 from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import AsyncManagementClient
+from foxnose_sdk.management.models import (
+    FolderSummary,
+    ResourceSummary,
+    RevisionSummary,
+)
 
 ORG_KEY = "org-1"
 PROJECT_KEY = "project-1"
@@ -643,7 +648,12 @@ async def test_async_list_projects_and_environments():
         if request.url.path.endswith("/projects/"):
             return httpx.Response(
                 200,
-                json={"count": 1, "next": None, "previous": None, "results": [PROJECT_JSON]},
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [PROJECT_JSON],
+                },
             )
         if request.url.path.endswith("/environments/"):
             return httpx.Response(200, json=[ENVIRONMENT_JSON])
@@ -667,11 +677,21 @@ async def test_async_list_resources_and_revisions():
         if "revisions" in request.url.path:
             return httpx.Response(
                 200,
-                json={"count": 1, "next": None, "previous": None, "results": [REVISION_JSON]},
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [REVISION_JSON],
+                },
             )
         return httpx.Response(
             200,
-            json={"count": 1, "next": None, "previous": None, "results": [RESOURCE_JSON]},
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [RESOURCE_JSON],
+            },
         )
 
     client = build_async_management_client(handler)
@@ -710,11 +730,21 @@ async def test_async_list_components_and_versions():
         if request.url.path.endswith("/components/"):
             return httpx.Response(
                 200,
-                json={"count": 1, "next": None, "previous": None, "results": [COMPONENT_JSON]},
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [COMPONENT_JSON],
+                },
             )
         return httpx.Response(
             200,
-            json={"count": 1, "next": None, "previous": None, "results": [VERSION_JSON]},
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [VERSION_JSON],
+            },
         )
 
     client = build_async_management_client(handler)
@@ -789,4 +819,68 @@ async def test_async_flux_search():
     assert result["results"] == []
     assert captured["path"] == "/v1/articles/_search"
     assert captured["body"]["where"]["$"]["all_of"] == []
+    await client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Model objects as identifiers (async client)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_list_resources_accepts_folder_object():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        payload = {
+            "count": 1,
+            "next": None,
+            "previous": None,
+            "results": [RESOURCE_JSON],
+        }
+        return httpx.Response(200, json=payload)
+
+    client = build_async_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    response = await client.list_resources(folder)
+    assert response.count == 1
+    assert captured["path"] == "/v1/env123/folders/folder-1/resources/"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_get_revision_accepts_model_objects():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(200, json=REVISION_JSON)
+
+    client = build_async_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    resource = ResourceSummary.model_validate(RESOURCE_JSON)
+    revision = RevisionSummary.model_validate(REVISION_JSON)
+    result = await client.get_revision(folder, resource, revision)
+    assert result.key == "rev-1"
+    assert (
+        captured["path"]
+        == "/v1/env123/folders/folder-1/resources/resource-1/revisions/rev-1/"
+    )
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_create_resource_accepts_folder_object():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_async_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    result = await client.create_resource(folder, {"data": {"title": "Hello"}})
+    assert result.key == "resource-1"
+    assert "/folders/folder-1/resources/" in captured["url"]
     await client.aclose()

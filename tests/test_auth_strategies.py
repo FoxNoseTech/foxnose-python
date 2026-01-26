@@ -34,7 +34,9 @@ def _generate_keys() -> tuple[str, str, ec.EllipticCurvePublicKey]:
 def test_secure_auth_produces_verifiable_signature():
     public_key, private_key, public_obj = _generate_keys()
     fixed_time = dt.datetime(2024, 2, 20, 18, 0, 0, tzinfo=dt.timezone.utc)
-    auth = SecureKeyAuth(public_key=public_key, private_key=private_key, clock=lambda: fixed_time)
+    auth = SecureKeyAuth(
+        public_key=public_key, private_key=private_key, clock=lambda: fixed_time
+    )
     body = b'{"hello":"world"}'
     request = RequestData(
         method="POST",

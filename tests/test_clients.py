@@ -5,11 +5,18 @@ from typing import Any, Callable
 
 import httpx
 
+import pytest
+
 from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import FluxClient
 from foxnose_sdk.http import HttpTransport
-from foxnose_sdk.management.client import ManagementClient
+from foxnose_sdk.management.client import ManagementClient, _resolve_key
+from foxnose_sdk.management.models import (
+    FolderSummary,
+    ResourceSummary,
+    RevisionSummary,
+)
 
 ORG_KEY = "org-1"
 PROJECT_KEY = "project-1"
@@ -307,7 +314,9 @@ PROTECTED_ENVIRONMENT_JSON = ENVIRONMENT_JSON | {
 }
 
 
-def build_management_client(handler: Callable[[httpx.Request], httpx.Response]) -> ManagementClient:
+def build_management_client(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> ManagementClient:
     client = ManagementClient(
         base_url="https://api.example.com",
         environment_key="env123",
@@ -316,7 +325,9 @@ def build_management_client(handler: Callable[[httpx.Request], httpx.Response]) 
     client._transport = HttpTransport(  # type: ignore[attr-defined]
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=SimpleKeyAuth("pub", "secret"),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     return client
 
@@ -383,7 +394,15 @@ def test_list_projects_and_update():
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(str(request.url))
         if request.method == "GET" and request.url.path.endswith("/projects/"):
-            return httpx.Response(200, json={"count": 1, "next": None, "previous": None, "results": [PROJECT_JSON]})
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [PROJECT_JSON],
+                },
+            )
         return httpx.Response(200, json=PROJECT_JSON | {"name": "Updated"})
 
     client = build_management_client(handler)
@@ -409,8 +428,12 @@ def test_create_environment_and_toggle():
     assert env.key == ENV_KEY
     client.toggle_environment(ORG_KEY, PROJECT_KEY, ENV_KEY, is_enabled=False)
     assert captured[0][0] == "POST"
-    assert captured[0][1].endswith(f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/")
-    assert captured[1][1].endswith(f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/{ENV_KEY}/toggle/")
+    assert captured[0][1].endswith(
+        f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/"
+    )
+    assert captured[1][1].endswith(
+        f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/{ENV_KEY}/toggle/"
+    )
 
 
 def test_update_environment_protection_and_clear():
@@ -420,8 +443,12 @@ def test_update_environment_protection_and_clear():
         captured["path"] = request.url.path
         if request.method == "PATCH":
             captured["body"] = json.loads(request.content.decode())
-            return httpx.Response(200, json=PROTECTED_ENVIRONMENT_JSON | captured["body"])
-        return httpx.Response(200, json=PROTECTED_ENVIRONMENT_JSON | {"protection_level": "none"})
+            return httpx.Response(
+                200, json=PROTECTED_ENVIRONMENT_JSON | captured["body"]
+            )
+        return httpx.Response(
+            200, json=PROTECTED_ENVIRONMENT_JSON | {"protection_level": "none"}
+        )
 
     client = build_management_client(handler)
     env = client.update_environment_protection(
@@ -433,10 +460,14 @@ def test_update_environment_protection_and_clear():
     )
     assert env.protection_level == "org_owner"
     assert captured["body"]["protection_reason"] == "Maintenance"
-    assert captured["path"].endswith(f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/{ENV_KEY}/protection/")
+    assert captured["path"].endswith(
+        f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/{ENV_KEY}/protection/"
+    )
 
     cleared = client.clear_environment_protection(ORG_KEY, PROJECT_KEY, ENV_KEY)
     assert cleared.protection_level == "none"
+
+
 def test_list_organizations_and_update():
     captured: list[str] = []
 
@@ -514,7 +545,12 @@ def test_management_api_key_lifecycle():
     def handler(request: httpx.Request) -> httpx.Response:
         captured["paths"].append((request.method, request.url.path))
         if request.method == "GET" and request.url.path.endswith("/api-keys/"):
-            payload = {"count": 1, "next": None, "previous": None, "results": [MANAGEMENT_API_KEY_JSON]}
+            payload = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [MANAGEMENT_API_KEY_JSON],
+            }
             return httpx.Response(200, json=payload)
         if request.method == "POST":
             captured["bodies"].append(json.loads(request.content.decode()))
@@ -523,7 +559,9 @@ def test_management_api_key_lifecycle():
             return httpx.Response(200, json=MANAGEMENT_API_KEY_JSON)
         if request.method == "PUT":
             captured["bodies"].append(json.loads(request.content.decode()))
-            return httpx.Response(200, json=MANAGEMENT_API_KEY_JSON | {"description": "Updated"})
+            return httpx.Response(
+                200, json=MANAGEMENT_API_KEY_JSON | {"description": "Updated"}
+            )
         if request.method == "DELETE":
             return httpx.Response(204)
         raise AssertionError(f"Unhandled request {request.method} {request.url}")
@@ -552,7 +590,12 @@ def test_flux_api_key_lifecycle():
     def handler(request: httpx.Request) -> httpx.Response:
         captured["paths"].append((request.method, request.url.path))
         if request.method == "GET" and request.url.path.endswith("/flux-api/api-keys/"):
-            payload = {"count": 1, "next": None, "previous": None, "results": [FLUX_API_KEY_JSON]}
+            payload = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [FLUX_API_KEY_JSON],
+            }
             return httpx.Response(200, json=payload)
         if request.method == "POST":
             captured["bodies"].append(json.loads(request.content.decode()))
@@ -561,7 +604,9 @@ def test_flux_api_key_lifecycle():
             return httpx.Response(200, json=FLUX_API_KEY_JSON)
         if request.method == "PUT":
             captured["bodies"].append(json.loads(request.content.decode()))
-            return httpx.Response(200, json=FLUX_API_KEY_JSON | {"description": "Updated Flux Key"})
+            return httpx.Response(
+                200, json=FLUX_API_KEY_JSON | {"description": "Updated Flux Key"}
+            )
         if request.method == "DELETE":
             return httpx.Response(204)
         raise AssertionError("Unexpected call")
@@ -576,7 +621,9 @@ def test_flux_api_key_lifecycle():
     detail = client.get_flux_api_key("flux-key-1")
     assert detail.key == "flux-key-1"
 
-    updated = client.update_flux_api_key("flux-key-1", {"description": "Updated Flux Key"})
+    updated = client.update_flux_api_key(
+        "flux-key-1", {"description": "Updated Flux Key"}
+    )
     assert updated.description == "Updated Flux Key"
 
     client.delete_flux_api_key("flux-key-1")
@@ -590,7 +637,12 @@ def test_management_role_crud():
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(str(request.url))
         if request.method == "GET" and request.url.path.endswith("/roles/"):
-            payload = {"count": 1, "next": None, "previous": None, "results": [MANAGEMENT_ROLE_JSON]}
+            payload = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [MANAGEMENT_ROLE_JSON],
+            }
             return httpx.Response(200, json=payload)
         if request.method == "POST":
             return httpx.Response(201, json=MANAGEMENT_ROLE_JSON)
@@ -627,15 +679,21 @@ def test_management_role_permissions_workflow():
 
     def handler(request: httpx.Request) -> httpx.Response:
         recorded.append((request.method, request.url.path))
-        if request.method == "GET" and request.url.path.endswith("/permissions/objects/"):
+        if request.method == "GET" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
             return httpx.Response(200, json=[PERMISSION_OBJECT_JSON])
         if request.method == "GET" and request.url.path.endswith("/permissions/"):
             return httpx.Response(200, json=[ROLE_PERMISSION_JSON])
-        if request.method == "POST" and request.url.path.endswith("/permissions/objects/"):
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
             body = json.loads(request.content.decode())
             bodies.append(body)
             return httpx.Response(201, json=PERMISSION_OBJECT_JSON | body)
-        if request.method == "POST" and request.url.path.endswith("/permissions/batch/"):
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/batch/"
+        ):
             body = json.loads(request.content.decode())
             bodies.append(body)
             return httpx.Response(200, json=body)
@@ -645,7 +703,9 @@ def test_management_role_permissions_workflow():
             return httpx.Response(201, json=ROLE_PERMISSION_JSON | body)
         if request.method == "DELETE" and request.url.path.endswith("/permissions/"):
             return httpx.Response(204)
-        if request.method == "DELETE" and request.url.path.endswith("/permissions/objects/"):
+        if request.method == "DELETE" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
             bodies.append(json.loads(request.content.decode()))
             return httpx.Response(204)
         raise AssertionError("Unexpected request")
@@ -659,10 +719,14 @@ def test_management_role_permissions_workflow():
 
     client.delete_management_role_permission("role-1", "resources")
 
-    replaced = client.replace_management_role_permissions("role-1", [ROLE_PERMISSION_JSON])
+    replaced = client.replace_management_role_permissions(
+        "role-1", [ROLE_PERMISSION_JSON]
+    )
     assert replaced[0].all_objects is True
 
-    objects = client.list_management_permission_objects("role-1", content_type="folder-items")
+    objects = client.list_management_permission_objects(
+        "role-1", content_type="folder-items"
+    )
     assert objects[0].object_key == "folder-1"
 
     added = client.add_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
@@ -671,7 +735,11 @@ def test_management_role_permissions_workflow():
     client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
 
     assert any("/permissions/batch/" in path for _, path in recorded)
-    assert any(body.get("content_type") == "folder-items" for body in bodies if isinstance(body, dict))
+    assert any(
+        body.get("content_type") == "folder-items"
+        for body in bodies
+        if isinstance(body, dict)
+    )
 
 
 def test_flux_role_crud_and_permissions():
@@ -681,13 +749,22 @@ def test_flux_role_crud_and_permissions():
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(str(request.url))
         if request.method == "GET" and request.url.path.endswith("/roles/"):
-            payload = {"count": 1, "next": None, "previous": None, "results": [FLUX_ROLE_JSON]}
+            payload = {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [FLUX_ROLE_JSON],
+            }
             return httpx.Response(200, json=payload)
-        if request.method == "POST" and request.url.path.endswith("/permissions/objects/"):
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
             body = json.loads(request.content.decode())
             bodies.append(body)
             return httpx.Response(201, json=FLUX_PERMISSION_OBJECT_JSON | body)
-        if request.method == "POST" and request.url.path.endswith("/permissions/batch/"):
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/batch/"
+        ):
             body = json.loads(request.content.decode())
             bodies.append(body)
             return httpx.Response(200, json=body)
@@ -697,7 +774,9 @@ def test_flux_role_crud_and_permissions():
             return httpx.Response(201, json=FLUX_ROLE_PERMISSION_JSON | body)
         if request.method == "POST":
             return httpx.Response(201, json=FLUX_ROLE_JSON)
-        if request.method == "GET" and request.url.path.endswith("/permissions/objects/"):
+        if request.method == "GET" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
             return httpx.Response(200, json=[FLUX_PERMISSION_OBJECT_JSON])
         if request.method == "GET" and request.url.path.endswith("/permissions/"):
             return httpx.Response(200, json=[FLUX_ROLE_PERMISSION_JSON])
@@ -706,7 +785,9 @@ def test_flux_role_crud_and_permissions():
         if request.method == "PUT":
             patch = json.loads(request.content.decode())
             return httpx.Response(200, json=FLUX_ROLE_JSON | patch)
-        if request.method == "DELETE" and request.url.path.endswith("/permissions/objects/"):
+        if request.method == "DELETE" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
             bodies.append(json.loads(request.content.decode()))
             return httpx.Response(204)
         if request.method == "DELETE":
@@ -729,18 +810,26 @@ def test_flux_role_crud_and_permissions():
     perms = client.list_flux_role_permissions("flux-role-1")
     assert perms[0].content_type == "flux-apis"
 
-    upserted = client.upsert_flux_role_permission("flux-role-1", FLUX_ROLE_PERMISSION_JSON)
+    upserted = client.upsert_flux_role_permission(
+        "flux-role-1", FLUX_ROLE_PERMISSION_JSON
+    )
     assert upserted.actions == FLUX_ROLE_PERMISSION_JSON["actions"]
 
     client.delete_flux_role_permission("flux-role-1", "flux-apis")
 
-    replaced = client.replace_flux_role_permissions("flux-role-1", [FLUX_ROLE_PERMISSION_JSON])
+    replaced = client.replace_flux_role_permissions(
+        "flux-role-1", [FLUX_ROLE_PERMISSION_JSON]
+    )
     assert replaced[0].all_objects is False
 
-    objects = client.list_flux_permission_objects("flux-role-1", content_type="flux-apis")
+    objects = client.list_flux_permission_objects(
+        "flux-role-1", content_type="flux-apis"
+    )
     assert objects[0].object_key == "api-1"
 
-    added = client.add_flux_permission_object("flux-role-1", FLUX_PERMISSION_OBJECT_JSON)
+    added = client.add_flux_permission_object(
+        "flux-role-1", FLUX_PERMISSION_OBJECT_JSON
+    )
     assert added.object_key == "api-1"
 
     client.delete_flux_permission_object("flux-role-1", FLUX_PERMISSION_OBJECT_JSON)
@@ -784,7 +873,9 @@ def test_locale_crud_flow():
     locales = client.list_locales()
     assert locales[0].code == "fr"
 
-    created = client.create_locale({"name": "Spanish", "code": "es", "is_default": False})
+    created = client.create_locale(
+        {"name": "Spanish", "code": "es", "is_default": False}
+    )
     assert created.name == "Français"
 
     detail = client.get_locale("fr")
@@ -805,7 +896,12 @@ def test_list_resources_returns_model():
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["path"] = request.url.path
-        payload = {"count": 1, "next": None, "previous": None, "results": [RESOURCE_JSON]}
+        payload = {
+            "count": 1,
+            "next": None,
+            "previous": None,
+            "results": [RESOURCE_JSON],
+        }
         return httpx.Response(200, json=payload)
 
     client = build_management_client(handler)
@@ -824,7 +920,9 @@ def test_create_resource_supports_component_param():
         return httpx.Response(201, json=RESOURCE_JSON)
 
     client = build_management_client(handler)
-    result = client.create_resource("folder-1", {"data": {"title": "Hello"}}, component="comp-1")
+    result = client.create_resource(
+        "folder-1", {"data": {"title": "Hello"}}, component="comp-1"
+    )
     assert result.key == "resource-1"
     assert "component=comp-1" in captured["url"]
     assert captured["body"]["data"]["title"] == "Hello"
@@ -840,7 +938,10 @@ def test_publish_revision_uses_nested_path():
     client = build_management_client(handler)
     revision = client.publish_revision("folder-1", "resource-1", "rev-1")
     assert revision.key == "rev-1"
-    assert captured["path"] == "/v1/env123/folders/folder-1/resources/resource-1/revisions/rev-1/publish/"
+    assert (
+        captured["path"]
+        == "/v1/env123/folders/folder-1/resources/resource-1/revisions/rev-1/publish/"
+    )
 
 
 def test_get_revision_data_returns_dict():
@@ -858,8 +959,24 @@ def test_list_components_and_versions():
     def handler(request: httpx.Request) -> httpx.Response:
         recorded.append(str(request.url))
         if request.url.path.endswith("/components/"):
-            return httpx.Response(200, json={"count": 1, "next": None, "previous": None, "results": [COMPONENT_JSON]})
-        return httpx.Response(200, json={"count": 1, "next": None, "previous": None, "results": [VERSION_JSON]})
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [COMPONENT_JSON],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [VERSION_JSON],
+            },
+        )
 
     client = build_management_client(handler)
     components = client.list_components()
@@ -879,7 +996,9 @@ def test_create_component_version_with_copy():
         return httpx.Response(201, json=VERSION_JSON)
 
     client = build_management_client(handler)
-    version = client.create_component_version("component-1", {"name": "Draft"}, copy_from="ver-0")
+    version = client.create_component_version(
+        "component-1", {"name": "Draft"}, copy_from="ver-0"
+    )
     assert version.key == "ver-1"
     assert "copy_from=ver-0" in captured["url"]
     assert captured["body"]["name"] == "Draft"
@@ -891,15 +1010,24 @@ def test_publish_component_version_and_fields():
     def handler(request: httpx.Request) -> httpx.Response:
         captured.setdefault("paths", []).append(str(request.url))
         if request.url.path.endswith("/publish/"):
-            return httpx.Response(200, json=VERSION_JSON | {"published_at": "2024-01-11T00:00:00Z"})
-        return httpx.Response(200, json={"count": 1, "next": None, "previous": None, "results": [FIELD_JSON]})
+            return httpx.Response(
+                200, json=VERSION_JSON | {"published_at": "2024-01-11T00:00:00Z"}
+            )
+        return httpx.Response(
+            200,
+            json={"count": 1, "next": None, "previous": None, "results": [FIELD_JSON]},
+        )
 
     client = build_management_client(handler)
     published = client.publish_component_version("component-1", "ver-1")
     assert published.published_at is not None
-    fields = client.list_component_fields("component-1", "ver-1", params={"path": "title"})
+    fields = client.list_component_fields(
+        "component-1", "ver-1", params={"path": "title"}
+    )
     assert fields.results[0].path == "title"
-    assert captured["paths"][0].endswith("/components/component-1/model/versions/ver-1/publish/")
+    assert captured["paths"][0].endswith(
+        "/components/component-1/model/versions/ver-1/publish/"
+    )
     assert "path=title" in captured["paths"][1]
 
 
@@ -912,9 +1040,14 @@ def test_update_component_field_uses_field_endpoint():
         return httpx.Response(200, json=FIELD_JSON | {"name": "Updated"})
 
     client = build_management_client(handler)
-    field = client.update_component_field("component-1", "ver-1", "title", {"name": "Updated"})
+    field = client.update_component_field(
+        "component-1", "ver-1", "title", {"name": "Updated"}
+    )
     assert field.name == "Updated"
-    assert "/components/component-1/model/versions/ver-1/schema/tree/field/" in captured["url"]
+    assert (
+        "/components/component-1/model/versions/ver-1/schema/tree/field/"
+        in captured["url"]
+    )
     assert "path=title" in captured["url"]
 
 
@@ -924,11 +1057,21 @@ def test_folder_version_and_field_management():
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(str(request.url))
         if request.method == "GET" and request.url.path.endswith("/schema/tree/"):
-            return httpx.Response(200, json={"count": 1, "next": None, "previous": None, "results": [FIELD_JSON]})
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [FIELD_JSON],
+                },
+            )
         if request.method == "POST" and request.url.path.endswith("/schema/tree/"):
             body = json.loads(request.content.decode())
             return httpx.Response(201, json=FIELD_JSON | {"name": body["name"]})
-        if request.method == "POST" and request.url.path.endswith("/schema/tree/field/"):
+        if request.method == "POST" and request.url.path.endswith(
+            "/schema/tree/field/"
+        ):
             body = json.loads(request.content.decode())
             return httpx.Response(200, json=FIELD_JSON | {"name": body["name"]})
         return httpx.Response(200, json=VERSION_JSON)
@@ -940,7 +1083,9 @@ def test_folder_version_and_field_management():
     fields = client.list_folder_fields("folder-1", "ver-1")
     assert fields.results[0].key == "title"
 
-    created = client.create_folder_field("folder-1", "ver-1", {"name": "Title", "key": "title"})
+    created = client.create_folder_field(
+        "folder-1", "ver-1", {"name": "Title", "key": "title"}
+    )
     assert created.name == "Title"
     assert captured[0].endswith("/folders/folder-1/model/versions/")
     assert "/folders/folder-1/model/versions/ver-1/schema/tree/" in captured[1]
@@ -961,8 +1106,98 @@ def test_flux_client_builds_paths_correctly():
     flux._transport = HttpTransport(  # type: ignore[attr-defined]
         config=FoxnoseConfig(base_url="https://env.fxns.io"),
         auth=SimpleKeyAuth("pub", "secret"),
-        sync_client=httpx.Client(base_url="https://env.fxns.io", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://env.fxns.io", transport=httpx.MockTransport(handler)
+        ),
     )
     flux.list_resources("articles")
     flux.search("articles", body={"where": {"$": {"all_of": []}}})
     assert captured["paths"] == ["/blog/articles", "/blog/articles/_search"]
+
+
+# ---------------------------------------------------------------------------
+# _resolve_key unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_key_with_string():
+    assert _resolve_key("some-key") == "some-key"
+
+
+def test_resolve_key_with_model_object():
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    assert _resolve_key(folder) == "folder-1"
+
+
+def test_resolve_key_raises_for_object_without_key():
+    class NoKey:
+        pass
+
+    with pytest.raises(TypeError, match="object with a 'key' attribute"):
+        _resolve_key(NoKey())  # type: ignore[arg-type]
+
+
+def test_resolve_key_raises_for_non_string_key():
+    class BadKey:
+        key = 42
+
+    with pytest.raises(TypeError, match="'key' to be a string"):
+        _resolve_key(BadKey())  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Model objects as identifiers (sync client)
+# ---------------------------------------------------------------------------
+
+
+def test_list_resources_accepts_folder_object():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        payload = {
+            "count": 1,
+            "next": None,
+            "previous": None,
+            "results": [RESOURCE_JSON],
+        }
+        return httpx.Response(200, json=payload)
+
+    client = build_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    response = client.list_resources(folder)
+    assert response.count == 1
+    assert captured["path"] == "/v1/env123/folders/folder-1/resources/"
+
+
+def test_get_revision_accepts_model_objects():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        return httpx.Response(200, json=REVISION_JSON)
+
+    client = build_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    resource = ResourceSummary.model_validate(RESOURCE_JSON)
+    revision = RevisionSummary.model_validate(REVISION_JSON)
+    result = client.get_revision(folder, resource, revision)
+    assert result.key == "rev-1"
+    assert (
+        captured["path"]
+        == "/v1/env123/folders/folder-1/resources/resource-1/revisions/rev-1/"
+    )
+
+
+def test_create_resource_accepts_folder_object():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    result = client.create_resource(folder, {"data": {"title": "Hello"}})
+    assert result.key == "resource-1"
+    assert "/folders/folder-1/resources/" in captured["url"]

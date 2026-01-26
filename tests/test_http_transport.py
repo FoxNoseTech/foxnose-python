@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
@@ -32,7 +31,9 @@ def test_transport_sends_headers_and_parses_json():
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
 
     data = transport.request("GET", "/v1/test")
@@ -55,7 +56,9 @@ def test_transport_retries_and_succeeds():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=retry,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = transport.request("GET", "/v1/test")
     assert data == {"ok": True}
@@ -69,7 +72,9 @@ def test_transport_raises_api_error():
         auth=auth,
         sync_client=httpx.Client(
             base_url="https://api.example.com",
-            transport=_mock_response({"message": "nope", "error_code": "oops"}, status_code=404),
+            transport=_mock_response(
+                {"message": "nope", "error_code": "oops"}, status_code=404
+            ),
         ),
     )
     with pytest.raises(FoxnoseAPIError) as exc:
@@ -89,7 +94,9 @@ async def test_async_transport_request():
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=mock),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=mock
+        ),
     )
     data = await transport.arequest("GET", "/v1/test")
     assert data == {"async": True}
@@ -105,7 +112,9 @@ def test_transport_raises_on_transport_error():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=1),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseTransportError):
         transport.request("GET", "/v1/test")
@@ -126,7 +135,9 @@ def test_transport_retries_on_transport_error_then_succeeds():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=3, backoff_factor=0),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = transport.request("GET", "/v1/test")
     assert data == {"recovered": True}
@@ -152,7 +163,9 @@ def test_transport_respects_retry_after_header():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=2, backoff_factor=0),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = transport.request("GET", "/v1/test")
     assert data == {"ok": True}
@@ -172,7 +185,9 @@ def test_transport_does_not_retry_post_by_default():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=3, backoff_factor=0),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseAPIError):
         transport.request("POST", "/v1/test", json_body={"data": "test"})
@@ -194,7 +209,9 @@ def test_transport_uses_default_headers():
             default_headers={"X-Custom-Header": "custom-value"},
         ),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     transport.request("GET", "/v1/test")
     assert captured["headers"]["x-custom-header"] == "custom-value"
@@ -215,7 +232,9 @@ def test_transport_request_headers_override_defaults():
             default_headers={"X-Custom": "default"},
         ),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     transport.request("GET", "/v1/test", headers={"X-Custom": "override"})
     assert captured["headers"]["x-custom"] == "override"
@@ -231,7 +250,9 @@ def test_transport_handles_empty_response():
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     result = transport.request("DELETE", "/v1/test")
     assert result is None
@@ -247,7 +268,9 @@ def test_transport_returns_text_on_json_decode_error():
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     result = transport.request("GET", "/v1/test")
     assert result == "plain text response"
@@ -263,7 +286,9 @@ def test_transport_api_error_with_non_json_body():
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseAPIError) as exc:
         transport.request("GET", "/v1/test")
@@ -306,7 +331,9 @@ async def test_async_transport_retries_and_succeeds():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=2, backoff_factor=0),
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = await transport.arequest("GET", "/v1/test")
     assert data == {"async_ok": True}
@@ -319,12 +346,16 @@ async def test_async_transport_raises_api_error():
     auth = SimpleKeyAuth("pub", "secret")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(403, json={"message": "forbidden", "error_code": "auth_failed"})
+        return httpx.Response(
+            403, json={"message": "forbidden", "error_code": "auth_failed"}
+        )
 
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseAPIError) as exc:
         await transport.arequest("GET", "/v1/test")
@@ -348,7 +379,9 @@ async def test_async_transport_retries_on_transport_error():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=3, backoff_factor=0),
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = await transport.arequest("GET", "/v1/test")
     assert data == {"recovered": True}
@@ -369,7 +402,9 @@ async def test_async_transport_exceeds_retry_attempts():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=3, backoff_factor=0),
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseAPIError):
         await transport.arequest("GET", "/v1/test")
@@ -396,7 +431,9 @@ async def test_async_transport_respects_retry_after():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=2, backoff_factor=0),
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = await transport.arequest("GET", "/v1/test")
     assert data == {"ok": True}
@@ -415,7 +452,9 @@ def test_transport_exceeds_retry_on_transport_error():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=3, backoff_factor=0),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseTransportError):
         transport.request("GET", "/v1/test")
@@ -436,7 +475,9 @@ async def test_async_transport_exceeds_retry_on_transport_error():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=3, backoff_factor=0),
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     with pytest.raises(FoxnoseTransportError):
         await transport.arequest("GET", "/v1/test")
@@ -453,7 +494,9 @@ def test_transport_parse_json_false_returns_response():
     transport = HttpTransport(
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     result = transport.request("GET", "/v1/test", parse_json=False)
     assert isinstance(result, httpx.Response)
@@ -479,7 +522,9 @@ def test_transport_handles_invalid_retry_after_header():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=2, backoff_factor=0),
-        sync_client=httpx.Client(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        sync_client=httpx.Client(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = transport.request("GET", "/v1/test")
     assert data == {"ok": True}
@@ -506,7 +551,9 @@ async def test_async_transport_handles_invalid_retry_after_header():
         config=FoxnoseConfig(base_url="https://api.example.com"),
         auth=auth,
         retry_config=RetryConfig(attempts=2, backoff_factor=0),
-        async_client=httpx.AsyncClient(base_url="https://api.example.com", transport=httpx.MockTransport(handler)),
+        async_client=httpx.AsyncClient(
+            base_url="https://api.example.com", transport=httpx.MockTransport(handler)
+        ),
     )
     data = await transport.arequest("GET", "/v1/test")
     assert data == {"ok": True}

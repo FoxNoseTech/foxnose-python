@@ -227,6 +227,50 @@ FLUX_ROLE_JSON = {
     "created_at": "2024-01-10T00:00:00Z",
 }
 
+ROLE_PERMISSION_JSON = {
+    "content_type": "resources",
+    "actions": ["read", "update"],
+    "all_objects": True,
+}
+
+PERMISSION_OBJECT_JSON = {
+    "content_type": "folder-items",
+    "object_key": "folder-1",
+}
+
+FLUX_ROLE_PERMISSION_JSON = {
+    "content_type": "flux-apis",
+    "actions": ["read"],
+    "all_objects": False,
+}
+
+FLUX_PERMISSION_OBJECT_JSON = {
+    "content_type": "flux-apis",
+    "object_key": "api-1",
+}
+
+USER_JSON = {
+    "key": "user-1",
+    "email": "owner@example.com",
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "full_name": "Jane Doe",
+}
+
+PROTECTED_ENVIRONMENT_JSON = {
+    "key": ENV_KEY,
+    "name": "Prod",
+    "project": PROJECT_KEY,
+    "host": "prod.fxns.io",
+    "is_enabled": True,
+    "created_at": "2024-01-10T00:00:00Z",
+    "protection_level": "org_owner",
+    "protection_level_display": "Organization Owner Protected",
+    "protected_by_user": USER_JSON,
+    "protected_at": "2024-03-01T10:00:00Z",
+    "protection_reason": "Maintenance",
+}
+
 LOCALE_JSON = {
     "name": "Français",
     "code": "fr",
@@ -767,6 +811,566 @@ async def test_async_folder_fields():
     client = build_async_management_client(handler)
     fields = await client.list_folder_fields("folder-1", "ver-1")
     assert fields.results[0].key == "title"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_get_folder_by_key():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=FOLDER_JSON)
+
+    client = build_async_management_client(handler)
+    folder = await client.get_folder("folder-1")
+    assert folder.key == "folder-1"
+    assert "key=folder-1" in captured["url"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_update_and_delete_folder():
+    captured: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.method, request.url.path))
+        if request.method == "PUT":
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=FOLDER_JSON | body)
+        return httpx.Response(204)
+
+    client = build_async_management_client(handler)
+    updated = await client.update_folder("folder-1", {"name": "Updated"})
+    assert updated.name == "Updated"
+    await client.delete_folder("folder-1")
+    assert captured[1][0] == "DELETE"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_list_folder_tree():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        payload = {
+            "count": 1,
+            "next": None,
+            "previous": None,
+            "results": [FOLDER_JSON],
+        }
+        return httpx.Response(200, json=payload)
+
+    client = build_async_management_client(handler)
+    folders = await client.list_folder_tree(key="folder-1", mode="children")
+    assert folders.results[0].key == "folder-1"
+    assert "key=folder-1" in captured["url"]
+    assert "mode=children" in captured["url"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_update_project():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        return httpx.Response(200, json=PROJECT_JSON | {"name": "Updated"})
+
+    client = build_async_management_client(handler)
+    updated = await client.update_project(ORG_KEY, PROJECT_KEY, {"name": "Updated"})
+    assert updated.name == "Updated"
+    assert captured[0].endswith(f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_create_environment_and_toggle():
+    captured: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.method, request.url.path))
+        if request.method == "POST" and request.url.path.endswith("/environments/"):
+            return httpx.Response(201, json=ENVIRONMENT_JSON)
+        return httpx.Response(200, json=ENVIRONMENT_JSON)
+
+    client = build_async_management_client(handler)
+    env = await client.create_environment(ORG_KEY, PROJECT_KEY, {"name": "Prod"})
+    assert env.key == ENV_KEY
+    await client.toggle_environment(ORG_KEY, PROJECT_KEY, ENV_KEY, is_enabled=False)
+    assert captured[0][0] == "POST"
+    assert captured[0][1].endswith(
+        f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/"
+    )
+    assert captured[1][1].endswith(
+        f"/organizations/{ORG_KEY}/projects/{PROJECT_KEY}/environments/{ENV_KEY}/toggle/"
+    )
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_environment_protection():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        if request.method == "PATCH":
+            captured["body"] = json.loads(request.content.decode())
+            return httpx.Response(
+                200, json=PROTECTED_ENVIRONMENT_JSON | captured["body"]
+            )
+        return httpx.Response(
+            200, json=PROTECTED_ENVIRONMENT_JSON | {"protection_level": "none"}
+        )
+
+    client = build_async_management_client(handler)
+    env = await client.update_environment_protection(
+        ORG_KEY,
+        PROJECT_KEY,
+        ENV_KEY,
+        protection_level="org_owner",
+        protection_reason="Maintenance",
+    )
+    assert env.protection_level == "org_owner"
+    assert captured["body"]["protection_reason"] == "Maintenance"
+
+    cleared = await client.clear_environment_protection(ORG_KEY, PROJECT_KEY, ENV_KEY)
+    assert cleared.protection_level == "none"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_set_organization_plan_and_available_plans():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        return httpx.Response(200, json=PLAN_STATUS_JSON)
+
+    client = build_async_management_client(handler)
+    updated = await client.set_organization_plan(ORG_KEY, "pro")
+    assert updated.next_plan.code == "pro"
+
+    catalog = await client.get_available_plans()
+    assert catalog.active_plan.limits.roles_max_count == 5
+
+    assert captured[0].endswith(f"/organizations/{ORG_KEY}/plan/pro/")
+    assert captured[1].endswith("/plans/")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_management_role_permissions_workflow():
+    recorded: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append((request.method, request.url.path))
+        if request.method == "GET" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
+            return httpx.Response(200, json=[PERMISSION_OBJECT_JSON])
+        if request.method == "GET" and request.url.path.endswith("/permissions/"):
+            return httpx.Response(200, json=[ROLE_PERMISSION_JSON])
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
+            body = json.loads(request.content.decode())
+            return httpx.Response(201, json=PERMISSION_OBJECT_JSON | body)
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/batch/"
+        ):
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=body)
+        if request.method == "POST":
+            body = json.loads(request.content.decode())
+            return httpx.Response(201, json=ROLE_PERMISSION_JSON | body)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        raise AssertionError("Unexpected request")
+
+    client = build_async_management_client(handler)
+    perms = await client.list_management_role_permissions("role-1")
+    assert perms[0].content_type == "resources"
+
+    created = await client.upsert_management_role_permission(
+        "role-1", ROLE_PERMISSION_JSON
+    )
+    assert created.actions == ["read", "update"]
+
+    await client.delete_management_role_permission("role-1", "resources")
+
+    replaced = await client.replace_management_role_permissions(
+        "role-1", [ROLE_PERMISSION_JSON]
+    )
+    assert replaced[0].all_objects is True
+
+    objects = await client.list_management_permission_objects(
+        "role-1", content_type="folder-items"
+    )
+    assert objects[0].object_key == "folder-1"
+
+    added = await client.add_management_permission_object(
+        "role-1", PERMISSION_OBJECT_JSON
+    )
+    assert added.object_key == "folder-1"
+
+    await client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_role_permissions_workflow():
+    recorded: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append((request.method, request.url.path))
+        if request.method == "GET" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
+            return httpx.Response(200, json=[FLUX_PERMISSION_OBJECT_JSON])
+        if request.method == "GET" and request.url.path.endswith("/permissions/"):
+            return httpx.Response(200, json=[FLUX_ROLE_PERMISSION_JSON])
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/objects/"
+        ):
+            body = json.loads(request.content.decode())
+            return httpx.Response(201, json=FLUX_PERMISSION_OBJECT_JSON | body)
+        if request.method == "POST" and request.url.path.endswith(
+            "/permissions/batch/"
+        ):
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=body)
+        if request.method == "POST":
+            body = json.loads(request.content.decode())
+            return httpx.Response(201, json=FLUX_ROLE_PERMISSION_JSON | body)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        raise AssertionError("Unexpected request")
+
+    client = build_async_management_client(handler)
+    perms = await client.list_flux_role_permissions("flux-role-1")
+    assert perms[0].content_type == "flux-apis"
+
+    upserted = await client.upsert_flux_role_permission(
+        "flux-role-1", FLUX_ROLE_PERMISSION_JSON
+    )
+    assert upserted.actions == ["read"]
+
+    await client.delete_flux_role_permission("flux-role-1", "flux-apis")
+
+    replaced = await client.replace_flux_role_permissions(
+        "flux-role-1", [FLUX_ROLE_PERMISSION_JSON]
+    )
+    assert replaced[0].all_objects is False
+
+    objects = await client.list_flux_permission_objects(
+        "flux-role-1", content_type="flux-apis"
+    )
+    assert objects[0].object_key == "api-1"
+
+    added = await client.add_flux_permission_object(
+        "flux-role-1", FLUX_PERMISSION_OBJECT_JSON
+    )
+    assert added.object_key == "api-1"
+
+    await client.delete_flux_permission_object(
+        "flux-role-1", FLUX_PERMISSION_OBJECT_JSON
+    )
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_create_resource_with_component():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_async_management_client(handler)
+    result = await client.create_resource(
+        "folder-1", {"data": {"title": "Hello"}}, component="comp-1"
+    )
+    assert result.key == "resource-1"
+    assert "component=comp-1" in captured["url"]
+    assert captured["body"]["data"]["title"] == "Hello"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_update_delete_resource_and_get_data():
+    captured: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.method, request.url.path))
+        if request.method == "PUT":
+            return httpx.Response(200)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.method == "GET" and request.url.path.endswith("/data/"):
+            return httpx.Response(200, json={"title": "Published"})
+        # GET for get_resource (called internally by update_resource)
+        return httpx.Response(200, json=RESOURCE_JSON)
+
+    client = build_async_management_client(handler)
+    updated = await client.update_resource(
+        "folder-1", "resource-1", {"name": "Updated"}
+    )
+    assert updated.key == "resource-1"
+
+    data = await client.get_resource_data("folder-1", "resource-1")
+    assert data["title"] == "Published"
+
+    await client.delete_resource("folder-1", "resource-1")
+    assert captured[-1][0] == "DELETE"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_revision_crud():
+    captured: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.method, request.url.path))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        # validate uses POST — check before generic POST
+        if "validate" in request.url.path:
+            return httpx.Response(200, json={"errors": []})
+        if request.method == "POST":
+            return httpx.Response(201, json=REVISION_JSON)
+        if request.url.path.endswith("/data/"):
+            return httpx.Response(200, json={"key": "rev-1", "title": "Content"})
+        # GET for get_revision / update_revision (PUT then GET)
+        if request.method == "PUT":
+            return httpx.Response(200, json=REVISION_JSON)
+        return httpx.Response(200, json=REVISION_JSON)
+
+    client = build_async_management_client(handler)
+    created = await client.create_revision("folder-1", "resource-1", {"title": "Draft"})
+    assert created.key == "rev-1"
+
+    detail = await client.get_revision("folder-1", "resource-1", "rev-1")
+    assert detail.number == 1
+
+    updated = await client.update_revision(
+        "folder-1", "resource-1", "rev-1", {"title": "Updated"}
+    )
+    assert updated.key == "rev-1"
+
+    result = await client.validate_revision("folder-1", "resource-1", "rev-1")
+    assert result["errors"] == []
+
+    data = await client.get_revision_data("folder-1", "resource-1", "rev-1")
+    assert data["key"] == "rev-1"
+
+    await client.delete_revision("folder-1", "resource-1", "rev-1")
+    assert captured[-1][0] == "DELETE"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_get_update_delete_component():
+    captured: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.method, request.url.path))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.method == "PUT":
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=COMPONENT_JSON | body)
+        return httpx.Response(200, json=COMPONENT_JSON)
+
+    client = build_async_management_client(handler)
+    comp = await client.get_component("component-1")
+    assert comp.key == "component-1"
+
+    updated = await client.update_component(
+        "component-1", {"description": "Updated desc"}
+    )
+    assert updated.description == "Updated desc"
+
+    await client.delete_component("component-1")
+    assert captured[-1][0] == "DELETE"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_component_version_lifecycle():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(str(request.url))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.url.path.endswith("/publish/"):
+            return httpx.Response(
+                200, json=VERSION_JSON | {"published_at": "2024-01-11T00:00:00Z"}
+            )
+        if request.method == "POST":
+            return httpx.Response(201, json=VERSION_JSON)
+        if request.method == "PUT":
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=VERSION_JSON | body)
+        return httpx.Response(200, json=VERSION_JSON)
+
+    client = build_async_management_client(handler)
+    created = await client.create_component_version(
+        "component-1", {"name": "Draft"}, copy_from="ver-0"
+    )
+    assert created.key == "ver-1"
+    assert "copy_from=ver-0" in captured[0]
+
+    detail = await client.get_component_version("component-1", "ver-1")
+    assert detail.version_number == 1
+
+    published = await client.publish_component_version("component-1", "ver-1")
+    assert published.published_at is not None
+
+    updated = await client.update_component_version(
+        "component-1", "ver-1", {"name": "Released"}
+    )
+    assert updated.name == "Released"
+
+    await client.delete_component_version("component-1", "ver-1")
+    assert captured[-1].endswith("/components/component-1/model/versions/ver-1/")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_component_field_crud():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(str(request.url))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.method == "POST":
+            body = json.loads(request.content.decode())
+            return httpx.Response(201, json=FIELD_JSON | body)
+        if request.method == "PUT":
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=FIELD_JSON | body)
+        return httpx.Response(200, json=FIELD_JSON)
+
+    client = build_async_management_client(handler)
+    created = await client.create_component_field(
+        "component-1", "ver-1", {"name": "Title", "key": "title"}
+    )
+    assert created.key == "title"
+
+    detail = await client.get_component_field("component-1", "ver-1", "title")
+    assert detail.path == "title"
+
+    updated = await client.update_component_field(
+        "component-1", "ver-1", "title", {"description": "Updated"}
+    )
+    assert updated.description == "Updated"
+
+    await client.delete_component_field("component-1", "ver-1", "title")
+    assert captured[-1].endswith("path=title")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_version_lifecycle():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(str(request.url))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.url.path.endswith("/publish/"):
+            return httpx.Response(
+                200, json=VERSION_JSON | {"published_at": "2024-01-11T00:00:00Z"}
+            )
+        if request.method == "POST":
+            return httpx.Response(201, json=VERSION_JSON)
+        if request.method == "PUT":
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=VERSION_JSON | body)
+        return httpx.Response(200, json=VERSION_JSON)
+
+    client = build_async_management_client(handler)
+    created = await client.create_folder_version(
+        "folder-1", {"name": "v2"}, copy_from="ver-0"
+    )
+    assert created.key == "ver-1"
+    assert "copy_from=ver-0" in captured[0]
+
+    detail = await client.get_folder_version("folder-1", "ver-1")
+    assert detail.version_number == 1
+
+    published = await client.publish_folder_version("folder-1", "ver-1")
+    assert published.published_at is not None
+
+    updated = await client.update_folder_version(
+        "folder-1", "ver-1", {"name": "Released"}
+    )
+    assert updated.name == "Released"
+
+    await client.delete_folder_version("folder-1", "ver-1")
+    assert captured[-1].endswith("/folders/folder-1/model/versions/ver-1/")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_folder_field_crud():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(str(request.url))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.method == "POST":
+            body = json.loads(request.content.decode())
+            return httpx.Response(201, json=FIELD_JSON | body)
+        if request.method == "PUT":
+            body = json.loads(request.content.decode())
+            return httpx.Response(200, json=FIELD_JSON | body)
+        # get_folder_field hits GET on /field/ path — return single FieldSummary
+        if request.method == "GET" and "/field/" in request.url.path:
+            return httpx.Response(200, json=FIELD_JSON)
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [FIELD_JSON],
+            },
+        )
+
+    client = build_async_management_client(handler)
+    created = await client.create_folder_field(
+        "folder-1", "ver-1", {"name": "Title", "key": "title"}
+    )
+    assert created.key == "title"
+
+    detail = await client.get_folder_field("folder-1", "ver-1", "title")
+    assert detail.path == "title"
+
+    updated = await client.update_folder_field(
+        "folder-1", "ver-1", "title", {"description": "Updated"}
+    )
+    assert updated.description == "Updated"
+
+    await client.delete_folder_field("folder-1", "ver-1", "title")
+    assert captured[-1].endswith("path=title")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_list_environments_handles_array():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[ENVIRONMENT_JSON])
+
+    client = build_async_management_client(handler)
+    envs = await client.list_environments(ORG_KEY, PROJECT_KEY)
+    assert envs[0].host == "prod.fxns.io"
     await client.aclose()
 
 

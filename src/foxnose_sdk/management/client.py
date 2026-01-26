@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Union
+
+from pydantic import BaseModel
 
 from ..auth import AuthStrategy
 from ..config import FoxnoseConfig, RetryConfig
@@ -44,6 +46,37 @@ from .models import (
     SchemaVersionList,
     SchemaVersionSummary,
 )
+
+
+def _resolve_key(value: str | BaseModel) -> str:
+    """Extract a string key from a value that is either a string or a model with a ``key`` attribute."""
+    if isinstance(value, str):
+        return value
+    try:
+        key = value.key  # type: ignore[union-attr]
+    except AttributeError:
+        raise TypeError(
+            f"Expected a string or an object with a 'key' attribute, "
+            f"got {type(value).__name__}"
+        )
+    if not isinstance(key, str):
+        raise TypeError(f"Expected 'key' to be a string, got {type(key).__name__}")
+    return key
+
+
+FolderRef = Union[str, FolderSummary]
+ResourceRef = Union[str, ResourceSummary]
+RevisionRef = Union[str, RevisionSummary]
+ComponentRef = Union[str, ComponentSummary]
+SchemaVersionRef = Union[str, SchemaVersionSummary]
+OrgRef = Union[str, OrganizationSummary]
+ProjectRef = Union[str, ProjectSummary]
+EnvironmentRef = Union[str, EnvironmentSummary]
+ManagementRoleRef = Union[str, ManagementRoleSummary]
+FluxRoleRef = Union[str, FluxRoleSummary]
+ManagementAPIKeyRef = Union[str, ManagementAPIKeySummary]
+FluxAPIKeyRef = Union[str, FluxAPIKeySummary]
+APIRef = Union[str, APIInfo]
 
 
 class _ManagementPathsMixin:
@@ -243,17 +276,18 @@ class ManagementClient(_ManagementPathsMixin):
             payload = [payload]
         return [OrganizationSummary.model_validate(item) for item in payload]
 
-    def get_organization(self, org_key: str) -> OrganizationSummary:
+    def get_organization(self, org_key: OrgRef) -> OrganizationSummary:
         """Retrieve details for a specific organization.
 
         Args:
             org_key: Unique identifier of the organization.
         """
+        org_key = _resolve_key(org_key)
         data = self.request("GET", f"{self._org_root(org_key)}/")
         return OrganizationSummary.model_validate(data)
 
     def update_organization(
-        self, org_key: str, payload: Mapping[str, Any]
+        self, org_key: OrgRef, payload: Mapping[str, Any]
     ) -> OrganizationSummary:
         """Update an organization's settings.
 
@@ -261,6 +295,7 @@ class ManagementClient(_ManagementPathsMixin):
             org_key: Unique identifier of the organization.
             payload: Fields to update (e.g., name, settings).
         """
+        org_key = _resolve_key(org_key)
         data = self.request("PUT", f"{self._org_root(org_key)}/", json_body=payload)
         return OrganizationSummary.model_validate(data)
 
@@ -276,17 +311,18 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("GET", "/plans/")
         return OrganizationPlanStatus.model_validate(data)
 
-    def get_organization_plan(self, org_key: str) -> OrganizationPlanStatus:
+    def get_organization_plan(self, org_key: OrgRef) -> OrganizationPlanStatus:
         """Get the current subscription plan for an organization.
 
         Args:
             org_key: Unique identifier of the organization.
         """
+        org_key = _resolve_key(org_key)
         data = self.request("GET", f"{self._org_root(org_key)}/plan/")
         return OrganizationPlanStatus.model_validate(data)
 
     def set_organization_plan(
-        self, org_key: str, plan_code: str
+        self, org_key: OrgRef, plan_code: str
     ) -> OrganizationPlanStatus:
         """Change the subscription plan for an organization.
 
@@ -294,15 +330,17 @@ class ManagementClient(_ManagementPathsMixin):
             org_key: Unique identifier of the organization.
             plan_code: Code of the plan to activate.
         """
+        org_key = _resolve_key(org_key)
         data = self.request("POST", f"{self._org_root(org_key)}/plan/{plan_code}/")
         return OrganizationPlanStatus.model_validate(data)
 
-    def get_organization_usage(self, org_key: str) -> OrganizationUsage:
+    def get_organization_usage(self, org_key: OrgRef) -> OrganizationUsage:
         """Retrieve usage statistics for an organization.
 
         Args:
             org_key: Unique identifier of the organization.
         """
+        org_key = _resolve_key(org_key)
         data = self.request("GET", f"{self._org_root(org_key)}/usage/")
         return OrganizationUsage.model_validate(data)
 
@@ -336,17 +374,20 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return ManagementAPIKeySummary.model_validate(data)
 
-    def get_management_api_key(self, key: str) -> ManagementAPIKeySummary:
+    def get_management_api_key(
+        self, key: ManagementAPIKeyRef
+    ) -> ManagementAPIKeySummary:
         """Retrieve details for a specific Management API key.
 
         Args:
             key: Unique identifier of the API key.
         """
+        key = _resolve_key(key)
         data = self.request("GET", f"{self._management_api_key_root(key)}/")
         return ManagementAPIKeySummary.model_validate(data)
 
     def update_management_api_key(
-        self, key: str, payload: Mapping[str, Any]
+        self, key: ManagementAPIKeyRef, payload: Mapping[str, Any]
     ) -> ManagementAPIKeySummary:
         """Update a Management API key.
 
@@ -354,17 +395,19 @@ class ManagementClient(_ManagementPathsMixin):
             key: Unique identifier of the API key.
             payload: Fields to update.
         """
+        key = _resolve_key(key)
         data = self.request(
             "PUT", f"{self._management_api_key_root(key)}/", json_body=payload
         )
         return ManagementAPIKeySummary.model_validate(data)
 
-    def delete_management_api_key(self, key: str) -> None:
+    def delete_management_api_key(self, key: ManagementAPIKeyRef) -> None:
         """Delete a Management API key.
 
         Args:
             key: Unique identifier of the API key to delete.
         """
+        key = _resolve_key(key)
         self.request(
             "DELETE", f"{self._management_api_key_root(key)}/", parse_json=False
         )
@@ -389,17 +432,18 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("POST", f"{self._flux_api_keys_root()}/", json_body=payload)
         return FluxAPIKeySummary.model_validate(data)
 
-    def get_flux_api_key(self, key: str) -> FluxAPIKeySummary:
+    def get_flux_api_key(self, key: FluxAPIKeyRef) -> FluxAPIKeySummary:
         """Retrieve details for a specific Flux API key.
 
         Args:
             key: Unique identifier of the API key.
         """
+        key = _resolve_key(key)
         data = self.request("GET", f"{self._flux_api_key_root(key)}/")
         return FluxAPIKeySummary.model_validate(data)
 
     def update_flux_api_key(
-        self, key: str, payload: Mapping[str, Any]
+        self, key: FluxAPIKeyRef, payload: Mapping[str, Any]
     ) -> FluxAPIKeySummary:
         """Update a Flux API key.
 
@@ -407,17 +451,19 @@ class ManagementClient(_ManagementPathsMixin):
             key: Unique identifier of the API key.
             payload: Fields to update.
         """
+        key = _resolve_key(key)
         data = self.request(
             "PUT", f"{self._flux_api_key_root(key)}/", json_body=payload
         )
         return FluxAPIKeySummary.model_validate(data)
 
-    def delete_flux_api_key(self, key: str) -> None:
+    def delete_flux_api_key(self, key: FluxAPIKeyRef) -> None:
         """Delete a Flux API key.
 
         Args:
             key: Unique identifier of the API key to delete.
         """
+        key = _resolve_key(key)
         self.request("DELETE", f"{self._flux_api_key_root(key)}/", parse_json=False)
 
     # ------------------------------------------------------------------ #
@@ -442,35 +488,38 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("POST", f"{self._apis_root()}/", json_body=payload)
         return APIInfo.model_validate(data)
 
-    def get_api(self, api_key: str) -> APIInfo:
+    def get_api(self, api_key: APIRef) -> APIInfo:
         """Retrieve details for a specific API.
 
         Args:
             api_key: Unique identifier of the API.
         """
+        api_key = _resolve_key(api_key)
         data = self.request("GET", f"{self._api_root(api_key)}/")
         return APIInfo.model_validate(data)
 
-    def update_api(self, api_key: str, payload: Mapping[str, Any]) -> APIInfo:
+    def update_api(self, api_key: APIRef, payload: Mapping[str, Any]) -> APIInfo:
         """Update an API configuration.
 
         Args:
             api_key: Unique identifier of the API.
             payload: Fields to update.
         """
+        api_key = _resolve_key(api_key)
         data = self.request("PUT", f"{self._api_root(api_key)}/", json_body=payload)
         return APIInfo.model_validate(data)
 
-    def delete_api(self, api_key: str) -> None:
+    def delete_api(self, api_key: APIRef) -> None:
         """Delete an API.
 
         Args:
             api_key: Unique identifier of the API to delete.
         """
+        api_key = _resolve_key(api_key)
         self.request("DELETE", f"{self._api_root(api_key)}/", parse_json=False)
 
     def list_api_folders(
-        self, api_key: str, *, params: Mapping[str, Any] | None = None
+        self, api_key: APIRef, *, params: Mapping[str, Any] | None = None
     ) -> APIFolderList:
         """List folders exposed through an API.
 
@@ -478,13 +527,14 @@ class ManagementClient(_ManagementPathsMixin):
             api_key: Unique identifier of the API.
             params: Optional query parameters for filtering/pagination.
         """
+        api_key = _resolve_key(api_key)
         data = self.request("GET", f"{self._api_folders_root(api_key)}/", params=params)
         return APIFolderList.model_validate(data)
 
     def add_api_folder(
         self,
-        api_key: str,
-        folder_key: str,
+        api_key: APIRef,
+        folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
     ) -> APIFolderSummary:
@@ -495,6 +545,8 @@ class ManagementClient(_ManagementPathsMixin):
             folder_key: Unique identifier of the folder to add.
             allowed_methods: HTTP methods allowed for this folder (e.g., ["GET", "POST"]).
         """
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {"folder": folder_key}
         if allowed_methods:
             payload["allowed_methods"] = allowed_methods
@@ -503,20 +555,24 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return APIFolderSummary.model_validate(data)
 
-    def get_api_folder(self, api_key: str, folder_key: str) -> APIFolderSummary:
+    def get_api_folder(
+        self, api_key: APIRef, folder_key: FolderRef
+    ) -> APIFolderSummary:
         """Retrieve details for a folder within an API.
 
         Args:
             api_key: Unique identifier of the API.
             folder_key: Unique identifier of the folder.
         """
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         data = self.request("GET", f"{self._api_folders_root(api_key)}/{folder_key}/")
         return APIFolderSummary.model_validate(data)
 
     def update_api_folder(
         self,
-        api_key: str,
-        folder_key: str,
+        api_key: APIRef,
+        folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
     ) -> APIFolderSummary:
@@ -527,6 +583,8 @@ class ManagementClient(_ManagementPathsMixin):
             folder_key: Unique identifier of the folder.
             allowed_methods: HTTP methods allowed for this folder.
         """
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {}
         if allowed_methods is not None:
             payload["allowed_methods"] = allowed_methods
@@ -535,13 +593,15 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return APIFolderSummary.model_validate(data)
 
-    def remove_api_folder(self, api_key: str, folder_key: str) -> None:
+    def remove_api_folder(self, api_key: APIRef, folder_key: FolderRef) -> None:
         """Remove a folder from an API.
 
         Args:
             api_key: Unique identifier of the API.
             folder_key: Unique identifier of the folder to remove.
         """
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         self.request(
             "DELETE",
             f"{self._api_folders_root(api_key)}/{folder_key}/",
@@ -576,17 +636,18 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return ManagementRoleSummary.model_validate(data)
 
-    def get_management_role(self, role_key: str) -> ManagementRoleSummary:
+    def get_management_role(self, role_key: ManagementRoleRef) -> ManagementRoleSummary:
         """Retrieve details for a specific Management API role.
 
         Args:
             role_key: Unique identifier of the role.
         """
+        role_key = _resolve_key(role_key)
         data = self.request("GET", f"{self._management_role_root(role_key)}/")
         return ManagementRoleSummary.model_validate(data)
 
     def update_management_role(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: ManagementRoleRef, payload: Mapping[str, Any]
     ) -> ManagementRoleSummary:
         """Update a Management API role.
 
@@ -594,33 +655,38 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Fields to update.
         """
+        role_key = _resolve_key(role_key)
         data = self.request(
             "PUT", f"{self._management_role_root(role_key)}/", json_body=payload
         )
         return ManagementRoleSummary.model_validate(data)
 
-    def delete_management_role(self, role_key: str) -> None:
+    def delete_management_role(self, role_key: ManagementRoleRef) -> None:
         """Delete a Management API role.
 
         Args:
             role_key: Unique identifier of the role to delete.
         """
+        role_key = _resolve_key(role_key)
         self.request(
             "DELETE", f"{self._management_role_root(role_key)}/", parse_json=False
         )
 
-    def list_management_role_permissions(self, role_key: str) -> list[RolePermission]:
+    def list_management_role_permissions(
+        self, role_key: ManagementRoleRef
+    ) -> list[RolePermission]:
         """List all permissions assigned to a Management API role.
 
         Args:
             role_key: Unique identifier of the role.
         """
+        role_key = _resolve_key(role_key)
         payload = self.request("GET", f"{self._role_permissions_root(role_key)}/") or []
         return [RolePermission.model_validate(item) for item in payload]
 
     def upsert_management_role_permission(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         payload: Mapping[str, Any],
     ) -> RolePermission:
         """Create or update a permission for a Management API role.
@@ -629,13 +695,14 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Permission configuration.
         """
+        role_key = _resolve_key(role_key)
         data = self.request(
             "POST", f"{self._role_permissions_root(role_key)}/", json_body=payload
         )
         return RolePermission.model_validate(data)
 
     def delete_management_role_permission(
-        self, role_key: str, content_type: str
+        self, role_key: ManagementRoleRef, content_type: str
     ) -> None:
         """Delete a permission from a Management API role.
 
@@ -643,6 +710,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             content_type: Content type of the permission to delete.
         """
+        role_key = _resolve_key(role_key)
         params = {"content_type": content_type}
         self.request(
             "DELETE",
@@ -653,7 +721,7 @@ class ManagementClient(_ManagementPathsMixin):
 
     def replace_management_role_permissions(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         permissions: list[Mapping[str, Any]],
     ) -> list[RolePermission]:
         """Replace all permissions for a Management API role.
@@ -662,6 +730,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             permissions: List of permission configurations to set.
         """
+        role_key = _resolve_key(role_key)
         data = (
             self.request(
                 "POST",
@@ -673,7 +742,7 @@ class ManagementClient(_ManagementPathsMixin):
         return [RolePermission.model_validate(item) for item in data]
 
     def list_management_permission_objects(
-        self, role_key: str, *, content_type: str
+        self, role_key: ManagementRoleRef, *, content_type: str
     ) -> list[RolePermissionObject]:
         """List permission objects for a Management API role.
 
@@ -681,6 +750,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             content_type: Content type to filter by.
         """
+        role_key = _resolve_key(role_key)
         params = {"content_type": content_type}
         payload = (
             self.request(
@@ -692,7 +762,7 @@ class ManagementClient(_ManagementPathsMixin):
 
     def add_management_permission_object(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         payload: Mapping[str, Any],
     ) -> RolePermissionObject:
         """Add a permission object to a Management API role.
@@ -701,6 +771,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Permission object configuration.
         """
+        role_key = _resolve_key(role_key)
         data = self.request(
             "POST",
             f"{self._role_permission_objects_root(role_key)}/",
@@ -710,7 +781,7 @@ class ManagementClient(_ManagementPathsMixin):
 
     def delete_management_permission_object(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         payload: Mapping[str, Any],
     ) -> None:
         """Delete a permission object from a Management API role.
@@ -719,6 +790,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Permission object to delete.
         """
+        role_key = _resolve_key(role_key)
         self.request(
             "DELETE",
             f"{self._role_permission_objects_root(role_key)}/",
@@ -746,17 +818,18 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("POST", f"{self._flux_roles_root()}/", json_body=payload)
         return FluxRoleSummary.model_validate(data)
 
-    def get_flux_role(self, role_key: str) -> FluxRoleSummary:
+    def get_flux_role(self, role_key: FluxRoleRef) -> FluxRoleSummary:
         """Retrieve details for a specific Flux API role.
 
         Args:
             role_key: Unique identifier of the role.
         """
+        role_key = _resolve_key(role_key)
         data = self.request("GET", f"{self._flux_role_root(role_key)}/")
         return FluxRoleSummary.model_validate(data)
 
     def update_flux_role(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: FluxRoleRef, payload: Mapping[str, Any]
     ) -> FluxRoleSummary:
         """Update a Flux API role.
 
@@ -764,32 +837,35 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Fields to update.
         """
+        role_key = _resolve_key(role_key)
         data = self.request(
             "PUT", f"{self._flux_role_root(role_key)}/", json_body=payload
         )
         return FluxRoleSummary.model_validate(data)
 
-    def delete_flux_role(self, role_key: str) -> None:
+    def delete_flux_role(self, role_key: FluxRoleRef) -> None:
         """Delete a Flux API role.
 
         Args:
             role_key: Unique identifier of the role to delete.
         """
+        role_key = _resolve_key(role_key)
         self.request("DELETE", f"{self._flux_role_root(role_key)}/", parse_json=False)
 
-    def list_flux_role_permissions(self, role_key: str) -> list[RolePermission]:
+    def list_flux_role_permissions(self, role_key: FluxRoleRef) -> list[RolePermission]:
         """List all permissions assigned to a Flux API role.
 
         Args:
             role_key: Unique identifier of the role.
         """
+        role_key = _resolve_key(role_key)
         payload = (
             self.request("GET", f"{self._flux_role_permissions_root(role_key)}/") or []
         )
         return [RolePermission.model_validate(item) for item in payload]
 
     def upsert_flux_role_permission(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: FluxRoleRef, payload: Mapping[str, Any]
     ) -> RolePermission:
         """Create or update a permission for a Flux API role.
 
@@ -797,18 +873,22 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Permission configuration.
         """
+        role_key = _resolve_key(role_key)
         data = self.request(
             "POST", f"{self._flux_role_permissions_root(role_key)}/", json_body=payload
         )
         return RolePermission.model_validate(data)
 
-    def delete_flux_role_permission(self, role_key: str, content_type: str) -> None:
+    def delete_flux_role_permission(
+        self, role_key: FluxRoleRef, content_type: str
+    ) -> None:
         """Delete a permission from a Flux API role.
 
         Args:
             role_key: Unique identifier of the role.
             content_type: Content type of the permission to delete.
         """
+        role_key = _resolve_key(role_key)
         self.request(
             "DELETE",
             f"{self._flux_role_permissions_root(role_key)}/",
@@ -818,7 +898,7 @@ class ManagementClient(_ManagementPathsMixin):
 
     def replace_flux_role_permissions(
         self,
-        role_key: str,
+        role_key: FluxRoleRef,
         permissions: list[Mapping[str, Any]],
     ) -> list[RolePermission]:
         """Replace all permissions for a Flux API role.
@@ -827,6 +907,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             permissions: List of permission configurations to set.
         """
+        role_key = _resolve_key(role_key)
         payload = (
             self.request(
                 "POST",
@@ -838,7 +919,7 @@ class ManagementClient(_ManagementPathsMixin):
         return [RolePermission.model_validate(item) for item in payload]
 
     def list_flux_permission_objects(
-        self, role_key: str, *, content_type: str
+        self, role_key: FluxRoleRef, *, content_type: str
     ) -> list[RolePermissionObject]:
         """List permission objects for a Flux API role.
 
@@ -846,6 +927,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             content_type: Content type to filter by.
         """
+        role_key = _resolve_key(role_key)
         payload = (
             self.request(
                 "GET",
@@ -857,7 +939,7 @@ class ManagementClient(_ManagementPathsMixin):
         return [RolePermissionObject.model_validate(item) for item in payload]
 
     def add_flux_permission_object(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: FluxRoleRef, payload: Mapping[str, Any]
     ) -> RolePermissionObject:
         """Add a permission object to a Flux API role.
 
@@ -865,6 +947,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Permission object configuration.
         """
+        role_key = _resolve_key(role_key)
         data = self.request(
             "POST",
             f"{self._flux_role_permission_objects_root(role_key)}/",
@@ -873,7 +956,7 @@ class ManagementClient(_ManagementPathsMixin):
         return RolePermissionObject.model_validate(data)
 
     def delete_flux_permission_object(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: FluxRoleRef, payload: Mapping[str, Any]
     ) -> None:
         """Delete a permission object from a Flux API role.
 
@@ -881,6 +964,7 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
             payload: Permission object to delete.
         """
+        role_key = _resolve_key(role_key)
         self.request(
             "DELETE",
             f"{self._flux_role_permission_objects_root(role_key)}/",
@@ -902,12 +986,13 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("GET", path, params=params)
         return FolderList.model_validate(data)
 
-    def get_folder(self, folder_key: str) -> FolderSummary:
+    def get_folder(self, folder_key: FolderRef) -> FolderSummary:
         """Retrieve details for a specific folder by key.
 
         Args:
             folder_key: Unique identifier of the folder.
         """
+        folder_key = _resolve_key(folder_key)
         data = self.request(
             "GET", f"{self._folders_tree_item()}/", params={"key": folder_key}
         )
@@ -957,7 +1042,7 @@ class ManagementClient(_ManagementPathsMixin):
         return FolderSummary.model_validate(data)
 
     def update_folder(
-        self, folder_key: str, payload: Mapping[str, Any]
+        self, folder_key: FolderRef, payload: Mapping[str, Any]
     ) -> FolderSummary:
         """Update a folder's configuration.
 
@@ -965,6 +1050,7 @@ class ManagementClient(_ManagementPathsMixin):
             folder_key: Unique identifier of the folder.
             payload: Fields to update.
         """
+        folder_key = _resolve_key(folder_key)
         data = self.request(
             "PUT",
             f"{self._folders_tree_item()}/",
@@ -973,12 +1059,13 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return FolderSummary.model_validate(data)
 
-    def delete_folder(self, folder_key: str) -> None:
+    def delete_folder(self, folder_key: FolderRef) -> None:
         """Delete a folder.
 
         Args:
             folder_key: Unique identifier of the folder to delete.
         """
+        folder_key = _resolve_key(folder_key)
         self.request(
             "DELETE",
             f"{self._folders_tree_item()}/",
@@ -991,7 +1078,7 @@ class ManagementClient(_ManagementPathsMixin):
     # ------------------------------------------------------------------ #
 
     def list_projects(
-        self, org_key: str, *, params: Mapping[str, Any] | None = None
+        self, org_key: OrgRef, *, params: Mapping[str, Any] | None = None
     ) -> ProjectList:
         """List all projects in an organization.
 
@@ -999,21 +1086,24 @@ class ManagementClient(_ManagementPathsMixin):
             org_key: Unique identifier of the organization.
             params: Optional query parameters for filtering/pagination.
         """
+        org_key = _resolve_key(org_key)
         data = self.request("GET", f"{self._projects_base(org_key)}/", params=params)
         return ProjectList.model_validate(data)
 
-    def get_project(self, org_key: str, project_key: str) -> ProjectSummary:
+    def get_project(self, org_key: OrgRef, project_key: ProjectRef) -> ProjectSummary:
         """Retrieve details for a specific project.
 
         Args:
             org_key: Unique identifier of the organization.
             project_key: Unique identifier of the project.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         data = self.request("GET", f"{self._project_root(org_key, project_key)}/")
         return ProjectSummary.model_validate(data)
 
     def create_project(
-        self, org_key: str, payload: Mapping[str, Any]
+        self, org_key: OrgRef, payload: Mapping[str, Any]
     ) -> ProjectSummary:
         """Create a new project in an organization.
 
@@ -1021,13 +1111,14 @@ class ManagementClient(_ManagementPathsMixin):
             org_key: Unique identifier of the organization.
             payload: Project configuration including name and settings.
         """
+        org_key = _resolve_key(org_key)
         data = self.request(
             "POST", f"{self._projects_base(org_key)}/", json_body=payload
         )
         return ProjectSummary.model_validate(data)
 
     def update_project(
-        self, org_key: str, project_key: str, payload: Mapping[str, Any]
+        self, org_key: OrgRef, project_key: ProjectRef, payload: Mapping[str, Any]
     ) -> ProjectSummary:
         """Update a project's configuration.
 
@@ -1036,18 +1127,22 @@ class ManagementClient(_ManagementPathsMixin):
             project_key: Unique identifier of the project.
             payload: Fields to update.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         data = self.request(
             "PUT", f"{self._project_root(org_key, project_key)}/", json_body=payload
         )
         return ProjectSummary.model_validate(data)
 
-    def delete_project(self, org_key: str, project_key: str) -> None:
+    def delete_project(self, org_key: OrgRef, project_key: ProjectRef) -> None:
         """Delete a project.
 
         Args:
             org_key: Unique identifier of the organization.
             project_key: Unique identifier of the project to delete.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         self.request(
             "DELETE", f"{self._project_root(org_key, project_key)}/", parse_json=False
         )
@@ -1056,20 +1151,24 @@ class ManagementClient(_ManagementPathsMixin):
     # Environment operations
     # ------------------------------------------------------------------ #
 
-    def list_environments(self, org_key: str, project_key: str) -> EnvironmentList:
+    def list_environments(
+        self, org_key: OrgRef, project_key: ProjectRef
+    ) -> EnvironmentList:
         """List all environments in a project.
 
         Args:
             org_key: Unique identifier of the organization.
             project_key: Unique identifier of the project.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         payload = self.request(
             "GET", f"{self._environments_base(org_key, project_key)}/"
         )
         return self._coerce_environment_list(payload)
 
     def get_environment(
-        self, org_key: str, project_key: str, env_key: str
+        self, org_key: OrgRef, project_key: ProjectRef, env_key: EnvironmentRef
     ) -> EnvironmentSummary:
         """Retrieve details for a specific environment.
 
@@ -1078,6 +1177,9 @@ class ManagementClient(_ManagementPathsMixin):
             project_key: Unique identifier of the project.
             env_key: Unique identifier of the environment.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         data = self.request(
             "GET", f"{self._environment_root(org_key, project_key, env_key)}/"
         )
@@ -1085,8 +1187,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def create_environment(
         self,
-        org_key: str,
-        project_key: str,
+        org_key: OrgRef,
+        project_key: ProjectRef,
         payload: Mapping[str, Any],
     ) -> EnvironmentSummary:
         """Create a new environment in a project.
@@ -1096,6 +1198,8 @@ class ManagementClient(_ManagementPathsMixin):
             project_key: Unique identifier of the project.
             payload: Environment configuration including name and region.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         data = self.request(
             "POST",
             f"{self._environments_base(org_key, project_key)}/",
@@ -1105,9 +1209,9 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_environment(
         self,
-        org_key: str,
-        project_key: str,
-        env_key: str,
+        org_key: OrgRef,
+        project_key: ProjectRef,
+        env_key: EnvironmentRef,
         payload: Mapping[str, Any],
     ) -> EnvironmentSummary:
         """Update an environment's configuration.
@@ -1118,6 +1222,9 @@ class ManagementClient(_ManagementPathsMixin):
             env_key: Unique identifier of the environment.
             payload: Fields to update.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         data = self.request(
             "PUT",
             f"{self._environment_root(org_key, project_key, env_key)}/",
@@ -1125,7 +1232,9 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return EnvironmentSummary.model_validate(data)
 
-    def delete_environment(self, org_key: str, project_key: str, env_key: str) -> None:
+    def delete_environment(
+        self, org_key: OrgRef, project_key: ProjectRef, env_key: EnvironmentRef
+    ) -> None:
         """Delete an environment.
 
         Args:
@@ -1133,6 +1242,9 @@ class ManagementClient(_ManagementPathsMixin):
             project_key: Unique identifier of the project.
             env_key: Unique identifier of the environment to delete.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         self.request(
             "DELETE",
             f"{self._environment_root(org_key, project_key, env_key)}/",
@@ -1140,7 +1252,12 @@ class ManagementClient(_ManagementPathsMixin):
         )
 
     def toggle_environment(
-        self, org_key: str, project_key: str, env_key: str, *, is_enabled: bool
+        self,
+        org_key: OrgRef,
+        project_key: ProjectRef,
+        env_key: EnvironmentRef,
+        *,
+        is_enabled: bool,
     ) -> None:
         """Enable or disable an environment.
 
@@ -1150,6 +1267,9 @@ class ManagementClient(_ManagementPathsMixin):
             env_key: Unique identifier of the environment.
             is_enabled: Whether the environment should be enabled.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         self.request(
             "POST",
             f"{self._environment_root(org_key, project_key, env_key)}/toggle/",
@@ -1159,9 +1279,9 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_environment_protection(
         self,
-        org_key: str,
-        project_key: str,
-        env_key: str,
+        org_key: OrgRef,
+        project_key: ProjectRef,
+        env_key: EnvironmentRef,
         *,
         protection_level: str,
         protection_reason: str | None = None,
@@ -1175,6 +1295,9 @@ class ManagementClient(_ManagementPathsMixin):
             protection_level: Protection level (e.g., "none", "read_only", "locked").
             protection_reason: Optional reason for the protection.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         payload: dict[str, Any] = {"protection_level": protection_level}
         if protection_reason is not None:
             payload["protection_reason"] = protection_reason
@@ -1186,7 +1309,7 @@ class ManagementClient(_ManagementPathsMixin):
         return EnvironmentSummary.model_validate(data)
 
     def clear_environment_protection(
-        self, org_key: str, project_key: str, env_key: str
+        self, org_key: OrgRef, project_key: ProjectRef, env_key: EnvironmentRef
     ) -> EnvironmentSummary:
         """Remove protection from an environment.
 
@@ -1195,6 +1318,9 @@ class ManagementClient(_ManagementPathsMixin):
             project_key: Unique identifier of the project.
             env_key: Unique identifier of the environment.
         """
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         return self.update_environment_protection(
             org_key,
             project_key,
@@ -1262,12 +1388,13 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("GET", f"{self._components_root()}/", params=params)
         return ComponentList.model_validate(data)
 
-    def get_component(self, component_key: str) -> ComponentSummary:
+    def get_component(self, component_key: ComponentRef) -> ComponentSummary:
         """Retrieve details for a specific component.
 
         Args:
             component_key: Unique identifier of the component.
         """
+        component_key = _resolve_key(component_key)
         data = self.request("GET", f"{self._component_root(component_key)}/")
         return ComponentSummary.model_validate(data)
 
@@ -1281,7 +1408,7 @@ class ManagementClient(_ManagementPathsMixin):
         return ComponentSummary.model_validate(data)
 
     def update_component(
-        self, component_key: str, payload: Mapping[str, Any]
+        self, component_key: ComponentRef, payload: Mapping[str, Any]
     ) -> ComponentSummary:
         """Update a component's configuration.
 
@@ -1289,24 +1416,26 @@ class ManagementClient(_ManagementPathsMixin):
             component_key: Unique identifier of the component.
             payload: Fields to update.
         """
+        component_key = _resolve_key(component_key)
         data = self.request(
             "PUT", f"{self._component_root(component_key)}/", json_body=payload
         )
         return ComponentSummary.model_validate(data)
 
-    def delete_component(self, component_key: str) -> None:
+    def delete_component(self, component_key: ComponentRef) -> None:
         """Delete a component.
 
         Args:
             component_key: Unique identifier of the component to delete.
         """
+        component_key = _resolve_key(component_key)
         self.request(
             "DELETE", f"{self._component_root(component_key)}/", parse_json=False
         )
 
     def list_component_versions(
         self,
-        component_key: str,
+        component_key: ComponentRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> SchemaVersionList:
@@ -1316,6 +1445,7 @@ class ManagementClient(_ManagementPathsMixin):
             component_key: Unique identifier of the component.
             params: Optional query parameters for filtering/pagination.
         """
+        component_key = _resolve_key(component_key)
         data = self.request(
             "GET", f"{self._component_versions_base(component_key)}/", params=params
         )
@@ -1323,10 +1453,10 @@ class ManagementClient(_ManagementPathsMixin):
 
     def create_component_version(
         self,
-        component_key: str,
+        component_key: ComponentRef,
         payload: Mapping[str, Any],
         *,
-        copy_from: str | None = None,
+        copy_from: SchemaVersionRef | None = None,
     ) -> SchemaVersionSummary:
         """Create a new schema version for a component.
 
@@ -1335,6 +1465,8 @@ class ManagementClient(_ManagementPathsMixin):
             payload: Version configuration including name.
             copy_from: Optional version key to copy schema from.
         """
+        component_key = _resolve_key(component_key)
+        copy_from = _resolve_key(copy_from) if copy_from is not None else None
         params = {"copy_from": copy_from} if copy_from else None
         data = self.request(
             "POST",
@@ -1346,8 +1478,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def get_component_version(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         *,
         include_schema: bool | None = None,
     ) -> SchemaVersionSummary:
@@ -1358,6 +1490,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             include_schema: Whether to include the full schema definition.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         params = (
             {"include_schema": str(include_schema).lower()}
             if include_schema is not None
@@ -1372,8 +1506,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def publish_component_version(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
     ) -> SchemaVersionSummary:
         """Publish a component version, making it available for use.
 
@@ -1381,6 +1515,8 @@ class ManagementClient(_ManagementPathsMixin):
             component_key: Unique identifier of the component.
             version_key: Unique identifier of the version to publish.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "POST",
             f"{self._component_versions_base(component_key)}/{version_key}/publish/",
@@ -1390,8 +1526,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_component_version(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> SchemaVersionSummary:
         """Update a component version's configuration.
@@ -1401,6 +1537,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             payload: Fields to update.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "PUT",
             f"{self._component_versions_base(component_key)}/{version_key}/",
@@ -1408,13 +1546,17 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return SchemaVersionSummary.model_validate(data)
 
-    def delete_component_version(self, component_key: str, version_key: str) -> None:
+    def delete_component_version(
+        self, component_key: ComponentRef, version_key: SchemaVersionRef
+    ) -> None:
         """Delete a component version.
 
         Args:
             component_key: Unique identifier of the component.
             version_key: Unique identifier of the version to delete.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         self.request(
             "DELETE",
             f"{self._component_versions_base(component_key)}/{version_key}/",
@@ -1423,8 +1565,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def list_component_fields(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> FieldList:
@@ -1435,6 +1577,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             params: Optional query parameters for filtering.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "GET",
             f"{self._component_schema_tree(component_key, version_key)}/",
@@ -1444,8 +1588,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def create_component_field(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
         """Add a new field to a component version's schema.
@@ -1455,6 +1599,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             payload: Field configuration including name and type.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "POST",
             f"{self._component_schema_tree(component_key, version_key)}/",
@@ -1464,8 +1610,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def get_component_field(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         field_path: str,
     ) -> FieldSummary:
         """Retrieve details for a specific field in a component schema.
@@ -1475,6 +1621,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             field_path: Path to the field (e.g., "title" or "metadata.author").
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "GET",
             f"{self._component_schema_tree(component_key, version_key)}/field/",
@@ -1484,8 +1632,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_component_field(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         field_path: str,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
@@ -1497,6 +1645,8 @@ class ManagementClient(_ManagementPathsMixin):
             field_path: Path to the field.
             payload: Fields to update.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "PUT",
             f"{self._component_schema_tree(component_key, version_key)}/field/",
@@ -1506,7 +1656,10 @@ class ManagementClient(_ManagementPathsMixin):
         return FieldSummary.model_validate(data)
 
     def delete_component_field(
-        self, component_key: str, version_key: str, field_path: str
+        self,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
     ) -> None:
         """Delete a field from a component schema.
 
@@ -1515,6 +1668,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             field_path: Path to the field to delete.
         """
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         self.request(
             "DELETE",
             f"{self._component_schema_tree(component_key, version_key)}/field/",
@@ -1528,7 +1683,7 @@ class ManagementClient(_ManagementPathsMixin):
 
     def list_folder_versions(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> SchemaVersionList:
@@ -1538,6 +1693,7 @@ class ManagementClient(_ManagementPathsMixin):
             folder_key: Unique identifier of the folder.
             params: Optional query parameters for filtering/pagination.
         """
+        folder_key = _resolve_key(folder_key)
         data = self.request(
             "GET", f"{self._folder_versions_base(folder_key)}/", params=params
         )
@@ -1545,10 +1701,10 @@ class ManagementClient(_ManagementPathsMixin):
 
     def create_folder_version(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        copy_from: str | None = None,
+        copy_from: SchemaVersionRef | None = None,
     ) -> SchemaVersionSummary:
         """Create a new schema version for a collection folder.
 
@@ -1557,6 +1713,8 @@ class ManagementClient(_ManagementPathsMixin):
             payload: Version configuration including name.
             copy_from: Optional version key to copy schema from.
         """
+        folder_key = _resolve_key(folder_key)
+        copy_from = _resolve_key(copy_from) if copy_from is not None else None
         params = {"copy_from": copy_from} if copy_from else None
         data = self.request(
             "POST",
@@ -1568,8 +1726,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def get_folder_version(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         *,
         include_schema: bool | None = None,
     ) -> SchemaVersionSummary:
@@ -1580,6 +1738,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             include_schema: Whether to include the full schema definition.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         params = (
             {"include_schema": str(include_schema).lower()}
             if include_schema is not None
@@ -1594,8 +1754,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_folder_version(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> SchemaVersionSummary:
         """Update a folder schema version's configuration.
@@ -1605,6 +1765,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             payload: Fields to update.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "PUT",
             f"{self._folder_versions_base(folder_key)}/{version_key}/",
@@ -1612,13 +1774,17 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return SchemaVersionSummary.model_validate(data)
 
-    def delete_folder_version(self, folder_key: str, version_key: str) -> None:
+    def delete_folder_version(
+        self, folder_key: FolderRef, version_key: SchemaVersionRef
+    ) -> None:
         """Delete a folder schema version.
 
         Args:
             folder_key: Unique identifier of the folder.
             version_key: Unique identifier of the version to delete.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         self.request(
             "DELETE",
             f"{self._folder_versions_base(folder_key)}/{version_key}/",
@@ -1627,8 +1793,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def publish_folder_version(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
     ) -> SchemaVersionSummary:
         """Publish a folder schema version, making it active for the folder.
 
@@ -1636,6 +1802,8 @@ class ManagementClient(_ManagementPathsMixin):
             folder_key: Unique identifier of the folder.
             version_key: Unique identifier of the version to publish.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "POST",
             f"{self._folder_versions_base(folder_key)}/{version_key}/publish/",
@@ -1644,8 +1812,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def list_folder_fields(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> FieldList:
@@ -1656,6 +1824,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             params: Optional query parameters for filtering.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "GET",
             f"{self._folder_schema_tree(folder_key, version_key)}/",
@@ -1665,8 +1835,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def create_folder_field(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
         """Add a new field to a folder schema version.
@@ -1676,6 +1846,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             payload: Field configuration including name and type.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "POST",
             f"{self._folder_schema_tree(folder_key, version_key)}/",
@@ -1685,8 +1857,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def get_folder_field(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         field_path: str,
     ) -> FieldSummary:
         """Retrieve details for a specific field in a folder schema.
@@ -1696,6 +1868,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             field_path: Path to the field (e.g., "title" or "metadata.author").
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "GET",
             f"{self._folder_schema_tree(folder_key, version_key)}/field/",
@@ -1705,8 +1879,8 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_folder_field(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         field_path: str,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
@@ -1718,6 +1892,8 @@ class ManagementClient(_ManagementPathsMixin):
             field_path: Path to the field.
             payload: Fields to update.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = self.request(
             "PUT",
             f"{self._folder_schema_tree(folder_key, version_key)}/field/",
@@ -1727,7 +1903,7 @@ class ManagementClient(_ManagementPathsMixin):
         return FieldSummary.model_validate(data)
 
     def delete_folder_field(
-        self, folder_key: str, version_key: str, field_path: str
+        self, folder_key: FolderRef, version_key: SchemaVersionRef, field_path: str
     ) -> None:
         """Delete a field from a folder schema.
 
@@ -1736,6 +1912,8 @@ class ManagementClient(_ManagementPathsMixin):
             version_key: Unique identifier of the version.
             field_path: Path to the field to delete.
         """
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         self.request(
             "DELETE",
             f"{self._folder_schema_tree(folder_key, version_key)}/field/",
@@ -1745,27 +1923,32 @@ class ManagementClient(_ManagementPathsMixin):
 
     def list_resources(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> ResourceList:
         """List resources inside a specific folder using limit/offset pagination."""
+        folder_key = _resolve_key(folder_key)
         path = f"{self._resource_base(folder_key)}/"
         data = self.request("GET", path, params=params)
         return ResourceList.model_validate(data)
 
-    def get_resource(self, folder_key: str, resource_key: str) -> ResourceSummary:
+    def get_resource(
+        self, folder_key: FolderRef, resource_key: ResourceRef
+    ) -> ResourceSummary:
         """Retrieve metadata for a specific resource."""
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         path = f"{self._resource_base(folder_key)}/{resource_key}/"
         data = self.request("GET", path)
         return ResourceSummary.model_validate(data)
 
     def create_resource(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        component: str | None = None,
+        component: ComponentRef | None = None,
     ) -> ResourceSummary:
         """
         Create a new resource.
@@ -1775,6 +1958,8 @@ class ManagementClient(_ManagementPathsMixin):
             payload: JSON payload that matches the folder/component schema.
             component: Optional component key for component-based folders.
         """
+        folder_key = _resolve_key(folder_key)
+        component = _resolve_key(component) if component is not None else None
 
         params = {"component": component} if component else None
         data = self.request(
@@ -1787,31 +1972,37 @@ class ManagementClient(_ManagementPathsMixin):
 
     def update_resource(
         self,
-        folder_key: str,
-        resource_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
         payload: Mapping[str, Any],
     ) -> ResourceSummary:
         """Update a resource by creating a new revision payload."""
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         path = f"{self._resource_base(folder_key)}/{resource_key}/"
         self.request("PUT", path, json_body=payload, parse_json=False)
         return self.get_resource(folder_key, resource_key)
 
-    def delete_resource(self, folder_key: str, resource_key: str) -> None:
+    def delete_resource(self, folder_key: FolderRef, resource_key: ResourceRef) -> None:
         """Delete a resource."""
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         path = f"{self._resource_base(folder_key)}/{resource_key}/"
         self.request("DELETE", path, parse_json=False)
 
     def get_resource_data(
-        self, folder_key: str, resource_key: str
+        self, folder_key: FolderRef, resource_key: ResourceRef
     ) -> Mapping[str, Any]:
         """Fetch the published JSON data for a resource."""
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         path = f"{self._resource_base(folder_key)}/{resource_key}/data/"
         return self.request("GET", path)
 
     def list_revisions(
         self,
-        folder_key: str,
-        resource_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> RevisionList:
@@ -1822,14 +2013,16 @@ class ManagementClient(_ManagementPathsMixin):
             resource_key: Unique identifier of the resource.
             params: Optional query parameters for filtering/pagination.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         path = f"{self._revision_base(folder_key, resource_key)}/"
         data = self.request("GET", path, params=params)
         return RevisionList.model_validate(data)
 
     def create_revision(
         self,
-        folder_key: str,
-        resource_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
         payload: Mapping[str, Any],
     ) -> RevisionSummary:
         """Create a new revision for a resource.
@@ -1839,15 +2032,17 @@ class ManagementClient(_ManagementPathsMixin):
             resource_key: Unique identifier of the resource.
             payload: Revision data matching the folder schema.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         path = f"{self._revision_base(folder_key, resource_key)}/"
         data = self.request("POST", path, json_body=payload)
         return RevisionSummary.model_validate(data)
 
     def get_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> RevisionSummary:
         """Retrieve details for a specific revision.
 
@@ -1856,15 +2051,18 @@ class ManagementClient(_ManagementPathsMixin):
             resource_key: Unique identifier of the resource.
             revision_key: Unique identifier of the revision.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = f"{self._revision_base(folder_key, resource_key)}/{revision_key}/"
         data = self.request("GET", path)
         return RevisionSummary.model_validate(data)
 
     def update_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
         payload: Mapping[str, Any],
     ) -> RevisionSummary:
         """Update a revision's data.
@@ -1875,12 +2073,18 @@ class ManagementClient(_ManagementPathsMixin):
             revision_key: Unique identifier of the revision.
             payload: Updated revision data.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = f"{self._revision_base(folder_key, resource_key)}/{revision_key}/"
         data = self.request("PUT", path, json_body=payload)
         return RevisionSummary.model_validate(data)
 
     def delete_revision(
-        self, folder_key: str, resource_key: str, revision_key: str
+        self,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> None:
         """Delete a revision.
 
@@ -1889,14 +2093,17 @@ class ManagementClient(_ManagementPathsMixin):
             resource_key: Unique identifier of the resource.
             revision_key: Unique identifier of the revision to delete.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = f"{self._revision_base(folder_key, resource_key)}/{revision_key}/"
         self.request("DELETE", path, parse_json=False)
 
     def publish_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
         payload: Mapping[str, Any] | None = None,
     ) -> RevisionSummary:
         """Publish a revision, making it the active version of the resource.
@@ -1907,6 +2114,9 @@ class ManagementClient(_ManagementPathsMixin):
             revision_key: Unique identifier of the revision to publish.
             payload: Optional publish configuration.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = (
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/publish/"
         )
@@ -1915,9 +2125,9 @@ class ManagementClient(_ManagementPathsMixin):
 
     def validate_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> Mapping[str, Any]:
         """Validate a revision before publishing.
 
@@ -1929,6 +2139,9 @@ class ManagementClient(_ManagementPathsMixin):
         Returns:
             Validation result containing any errors found.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = (
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/validate/"
         )
@@ -1936,9 +2149,9 @@ class ManagementClient(_ManagementPathsMixin):
 
     def get_revision_data(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> Mapping[str, Any]:
         """Fetch the JSON data for a specific revision.
 
@@ -1947,6 +2160,9 @@ class ManagementClient(_ManagementPathsMixin):
             resource_key: Unique identifier of the resource.
             revision_key: Unique identifier of the revision.
         """
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = f"{self._revision_base(folder_key, resource_key)}/{revision_key}/data/"
         return self.request("GET", path)
 
@@ -2009,13 +2225,15 @@ class AsyncManagementClient(_ManagementPathsMixin):
             payload = [payload]
         return [OrganizationSummary.model_validate(item) for item in payload]
 
-    async def get_organization(self, org_key: str) -> OrganizationSummary:
+    async def get_organization(self, org_key: OrgRef) -> OrganizationSummary:
+        org_key = _resolve_key(org_key)
         data = await self.request("GET", f"{self._org_root(org_key)}/")
         return OrganizationSummary.model_validate(data)
 
     async def update_organization(
-        self, org_key: str, payload: Mapping[str, Any]
+        self, org_key: OrgRef, payload: Mapping[str, Any]
     ) -> OrganizationSummary:
+        org_key = _resolve_key(org_key)
         data = await self.request(
             "PUT", f"{self._org_root(org_key)}/", json_body=payload
         )
@@ -2031,19 +2249,22 @@ class AsyncManagementClient(_ManagementPathsMixin):
         data = await self.request("GET", "/plans/")
         return OrganizationPlanStatus.model_validate(data)
 
-    async def get_organization_plan(self, org_key: str) -> OrganizationPlanStatus:
+    async def get_organization_plan(self, org_key: OrgRef) -> OrganizationPlanStatus:
+        org_key = _resolve_key(org_key)
         data = await self.request("GET", f"{self._org_root(org_key)}/plan/")
         return OrganizationPlanStatus.model_validate(data)
 
     async def set_organization_plan(
-        self, org_key: str, plan_code: str
+        self, org_key: OrgRef, plan_code: str
     ) -> OrganizationPlanStatus:
+        org_key = _resolve_key(org_key)
         data = await self.request(
             "POST", f"{self._org_root(org_key)}/plan/{plan_code}/"
         )
         return OrganizationPlanStatus.model_validate(data)
 
-    async def get_organization_usage(self, org_key: str) -> OrganizationUsage:
+    async def get_organization_usage(self, org_key: OrgRef) -> OrganizationUsage:
+        org_key = _resolve_key(org_key)
         data = await self.request("GET", f"{self._org_root(org_key)}/usage/")
         return OrganizationUsage.model_validate(data)
 
@@ -2067,19 +2288,24 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return ManagementAPIKeySummary.model_validate(data)
 
-    async def get_management_api_key(self, key: str) -> ManagementAPIKeySummary:
+    async def get_management_api_key(
+        self, key: ManagementAPIKeyRef
+    ) -> ManagementAPIKeySummary:
+        key = _resolve_key(key)
         data = await self.request("GET", f"{self._management_api_key_root(key)}/")
         return ManagementAPIKeySummary.model_validate(data)
 
     async def update_management_api_key(
-        self, key: str, payload: Mapping[str, Any]
+        self, key: ManagementAPIKeyRef, payload: Mapping[str, Any]
     ) -> ManagementAPIKeySummary:
+        key = _resolve_key(key)
         data = await self.request(
             "PUT", f"{self._management_api_key_root(key)}/", json_body=payload
         )
         return ManagementAPIKeySummary.model_validate(data)
 
-    async def delete_management_api_key(self, key: str) -> None:
+    async def delete_management_api_key(self, key: ManagementAPIKeyRef) -> None:
+        key = _resolve_key(key)
         await self.request(
             "DELETE", f"{self._management_api_key_root(key)}/", parse_json=False
         )
@@ -2100,19 +2326,22 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return FluxAPIKeySummary.model_validate(data)
 
-    async def get_flux_api_key(self, key: str) -> FluxAPIKeySummary:
+    async def get_flux_api_key(self, key: FluxAPIKeyRef) -> FluxAPIKeySummary:
+        key = _resolve_key(key)
         data = await self.request("GET", f"{self._flux_api_key_root(key)}/")
         return FluxAPIKeySummary.model_validate(data)
 
     async def update_flux_api_key(
-        self, key: str, payload: Mapping[str, Any]
+        self, key: FluxAPIKeyRef, payload: Mapping[str, Any]
     ) -> FluxAPIKeySummary:
+        key = _resolve_key(key)
         data = await self.request(
             "PUT", f"{self._flux_api_key_root(key)}/", json_body=payload
         )
         return FluxAPIKeySummary.model_validate(data)
 
-    async def delete_flux_api_key(self, key: str) -> None:
+    async def delete_flux_api_key(self, key: FluxAPIKeyRef) -> None:
+        key = _resolve_key(key)
         await self.request(
             "DELETE", f"{self._flux_api_key_root(key)}/", parse_json=False
         )
@@ -2129,22 +2358,26 @@ class AsyncManagementClient(_ManagementPathsMixin):
         data = await self.request("POST", f"{self._apis_root()}/", json_body=payload)
         return APIInfo.model_validate(data)
 
-    async def get_api(self, api_key: str) -> APIInfo:
+    async def get_api(self, api_key: APIRef) -> APIInfo:
+        api_key = _resolve_key(api_key)
         data = await self.request("GET", f"{self._api_root(api_key)}/")
         return APIInfo.model_validate(data)
 
-    async def update_api(self, api_key: str, payload: Mapping[str, Any]) -> APIInfo:
+    async def update_api(self, api_key: APIRef, payload: Mapping[str, Any]) -> APIInfo:
+        api_key = _resolve_key(api_key)
         data = await self.request(
             "PUT", f"{self._api_root(api_key)}/", json_body=payload
         )
         return APIInfo.model_validate(data)
 
-    async def delete_api(self, api_key: str) -> None:
+    async def delete_api(self, api_key: APIRef) -> None:
+        api_key = _resolve_key(api_key)
         await self.request("DELETE", f"{self._api_root(api_key)}/", parse_json=False)
 
     async def list_api_folders(
-        self, api_key: str, *, params: Mapping[str, Any] | None = None
+        self, api_key: APIRef, *, params: Mapping[str, Any] | None = None
     ) -> APIFolderList:
+        api_key = _resolve_key(api_key)
         data = await self.request(
             "GET", f"{self._api_folders_root(api_key)}/", params=params
         )
@@ -2152,11 +2385,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def add_api_folder(
         self,
-        api_key: str,
-        folder_key: str,
+        api_key: APIRef,
+        folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
     ) -> APIFolderSummary:
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {"folder": folder_key}
         if allowed_methods:
             payload["allowed_methods"] = allowed_methods
@@ -2165,7 +2400,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return APIFolderSummary.model_validate(data)
 
-    async def get_api_folder(self, api_key: str, folder_key: str) -> APIFolderSummary:
+    async def get_api_folder(
+        self, api_key: APIRef, folder_key: FolderRef
+    ) -> APIFolderSummary:
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         data = await self.request(
             "GET", f"{self._api_folders_root(api_key)}/{folder_key}/"
         )
@@ -2173,11 +2412,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_api_folder(
         self,
-        api_key: str,
-        folder_key: str,
+        api_key: APIRef,
+        folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
     ) -> APIFolderSummary:
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {}
         if allowed_methods is not None:
             payload["allowed_methods"] = allowed_methods
@@ -2186,7 +2427,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return APIFolderSummary.model_validate(data)
 
-    async def remove_api_folder(self, api_key: str, folder_key: str) -> None:
+    async def remove_api_folder(self, api_key: APIRef, folder_key: FolderRef) -> None:
+        api_key = _resolve_key(api_key)
+        folder_key = _resolve_key(folder_key)
         await self.request(
             "DELETE",
             f"{self._api_folders_root(api_key)}/{folder_key}/",
@@ -2213,26 +2456,32 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return ManagementRoleSummary.model_validate(data)
 
-    async def get_management_role(self, role_key: str) -> ManagementRoleSummary:
+    async def get_management_role(
+        self, role_key: ManagementRoleRef
+    ) -> ManagementRoleSummary:
+        role_key = _resolve_key(role_key)
         data = await self.request("GET", f"{self._management_role_root(role_key)}/")
         return ManagementRoleSummary.model_validate(data)
 
     async def update_management_role(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: ManagementRoleRef, payload: Mapping[str, Any]
     ) -> ManagementRoleSummary:
+        role_key = _resolve_key(role_key)
         data = await self.request(
             "PUT", f"{self._management_role_root(role_key)}/", json_body=payload
         )
         return ManagementRoleSummary.model_validate(data)
 
-    async def delete_management_role(self, role_key: str) -> None:
+    async def delete_management_role(self, role_key: ManagementRoleRef) -> None:
+        role_key = _resolve_key(role_key)
         await self.request(
             "DELETE", f"{self._management_role_root(role_key)}/", parse_json=False
         )
 
     async def list_management_role_permissions(
-        self, role_key: str
+        self, role_key: ManagementRoleRef
     ) -> list[RolePermission]:
+        role_key = _resolve_key(role_key)
         payload = (
             await self.request("GET", f"{self._role_permissions_root(role_key)}/") or []
         )
@@ -2240,17 +2489,19 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def upsert_management_role_permission(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         payload: Mapping[str, Any],
     ) -> RolePermission:
+        role_key = _resolve_key(role_key)
         data = await self.request(
             "POST", f"{self._role_permissions_root(role_key)}/", json_body=payload
         )
         return RolePermission.model_validate(data)
 
     async def delete_management_role_permission(
-        self, role_key: str, content_type: str
+        self, role_key: ManagementRoleRef, content_type: str
     ) -> None:
+        role_key = _resolve_key(role_key)
         await self.request(
             "DELETE",
             f"{self._role_permissions_root(role_key)}/",
@@ -2260,9 +2511,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def replace_management_role_permissions(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         permissions: list[Mapping[str, Any]],
     ) -> list[RolePermission]:
+        role_key = _resolve_key(role_key)
         data = (
             await self.request(
                 "POST",
@@ -2274,8 +2526,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return [RolePermission.model_validate(item) for item in data]
 
     async def list_management_permission_objects(
-        self, role_key: str, *, content_type: str
+        self, role_key: ManagementRoleRef, *, content_type: str
     ) -> list[RolePermissionObject]:
+        role_key = _resolve_key(role_key)
         payload = await self.request(
             "GET",
             f"{self._role_permission_objects_root(role_key)}/",
@@ -2286,9 +2539,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def add_management_permission_object(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         payload: Mapping[str, Any],
     ) -> RolePermissionObject:
+        role_key = _resolve_key(role_key)
         data = await self.request(
             "POST",
             f"{self._role_permission_objects_root(role_key)}/",
@@ -2298,9 +2552,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def delete_management_permission_object(
         self,
-        role_key: str,
+        role_key: ManagementRoleRef,
         payload: Mapping[str, Any],
     ) -> None:
+        role_key = _resolve_key(role_key)
         await self.request(
             "DELETE",
             f"{self._role_permission_objects_root(role_key)}/",
@@ -2320,24 +2575,30 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return FluxRoleSummary.model_validate(data)
 
-    async def get_flux_role(self, role_key: str) -> FluxRoleSummary:
+    async def get_flux_role(self, role_key: FluxRoleRef) -> FluxRoleSummary:
+        role_key = _resolve_key(role_key)
         data = await self.request("GET", f"{self._flux_role_root(role_key)}/")
         return FluxRoleSummary.model_validate(data)
 
     async def update_flux_role(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: FluxRoleRef, payload: Mapping[str, Any]
     ) -> FluxRoleSummary:
+        role_key = _resolve_key(role_key)
         data = await self.request(
             "PUT", f"{self._flux_role_root(role_key)}/", json_body=payload
         )
         return FluxRoleSummary.model_validate(data)
 
-    async def delete_flux_role(self, role_key: str) -> None:
+    async def delete_flux_role(self, role_key: FluxRoleRef) -> None:
+        role_key = _resolve_key(role_key)
         await self.request(
             "DELETE", f"{self._flux_role_root(role_key)}/", parse_json=False
         )
 
-    async def list_flux_role_permissions(self, role_key: str) -> list[RolePermission]:
+    async def list_flux_role_permissions(
+        self, role_key: FluxRoleRef
+    ) -> list[RolePermission]:
+        role_key = _resolve_key(role_key)
         payload = (
             await self.request("GET", f"{self._flux_role_permissions_root(role_key)}/")
             or []
@@ -2345,16 +2606,18 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return [RolePermission.model_validate(item) for item in payload]
 
     async def upsert_flux_role_permission(
-        self, role_key: str, payload: Mapping[str, Any]
+        self, role_key: FluxRoleRef, payload: Mapping[str, Any]
     ) -> RolePermission:
+        role_key = _resolve_key(role_key)
         data = await self.request(
             "POST", f"{self._flux_role_permissions_root(role_key)}/", json_body=payload
         )
         return RolePermission.model_validate(data)
 
     async def delete_flux_role_permission(
-        self, role_key: str, content_type: str
+        self, role_key: FluxRoleRef, content_type: str
     ) -> None:
+        role_key = _resolve_key(role_key)
         await self.request(
             "DELETE",
             f"{self._flux_role_permissions_root(role_key)}/",
@@ -2364,9 +2627,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def replace_flux_role_permissions(
         self,
-        role_key: str,
+        role_key: FluxRoleRef,
         permissions: list[Mapping[str, Any]],
     ) -> list[RolePermission]:
+        role_key = _resolve_key(role_key)
         payload = (
             await self.request(
                 "POST",
@@ -2378,8 +2642,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return [RolePermission.model_validate(item) for item in payload]
 
     async def list_flux_permission_objects(
-        self, role_key: str, *, content_type: str
+        self, role_key: FluxRoleRef, *, content_type: str
     ) -> list[RolePermissionObject]:
+        role_key = _resolve_key(role_key)
         payload = await self.request(
             "GET",
             f"{self._flux_role_permission_objects_root(role_key)}/",
@@ -2390,9 +2655,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def add_flux_permission_object(
         self,
-        role_key: str,
+        role_key: FluxRoleRef,
         payload: Mapping[str, Any],
     ) -> RolePermissionObject:
+        role_key = _resolve_key(role_key)
         data = await self.request(
             "POST",
             f"{self._flux_role_permission_objects_root(role_key)}/",
@@ -2402,9 +2668,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def delete_flux_permission_object(
         self,
-        role_key: str,
+        role_key: FluxRoleRef,
         payload: Mapping[str, Any],
     ) -> None:
+        role_key = _resolve_key(role_key)
         await self.request(
             "DELETE",
             f"{self._flux_role_permission_objects_root(role_key)}/",
@@ -2422,7 +2689,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         data = await self.request("GET", f"{self._folders_tree_root()}/", params=params)
         return FolderList.model_validate(data)
 
-    async def get_folder(self, folder_key: str) -> FolderSummary:
+    async def get_folder(self, folder_key: FolderRef) -> FolderSummary:
+        folder_key = _resolve_key(folder_key)
         data = await self.request(
             "GET", f"{self._folders_tree_item()}/", params={"key": folder_key}
         )
@@ -2459,8 +2727,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return FolderSummary.model_validate(data)
 
     async def update_folder(
-        self, folder_key: str, payload: Mapping[str, Any]
+        self, folder_key: FolderRef, payload: Mapping[str, Any]
     ) -> FolderSummary:
+        folder_key = _resolve_key(folder_key)
         data = await self.request(
             "PUT",
             f"{self._folders_tree_item()}/",
@@ -2469,7 +2738,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return FolderSummary.model_validate(data)
 
-    async def delete_folder(self, folder_key: str) -> None:
+    async def delete_folder(self, folder_key: FolderRef) -> None:
+        folder_key = _resolve_key(folder_key)
         await self.request(
             "DELETE",
             f"{self._folders_tree_item()}/",
@@ -2487,7 +2757,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         data = await self.request("GET", f"{self._components_root()}/", params=params)
         return ComponentList.model_validate(data)
 
-    async def get_component(self, component_key: str) -> ComponentSummary:
+    async def get_component(self, component_key: ComponentRef) -> ComponentSummary:
+        component_key = _resolve_key(component_key)
         data = await self.request("GET", f"{self._component_root(component_key)}/")
         return ComponentSummary.model_validate(data)
 
@@ -2498,8 +2769,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return ComponentSummary.model_validate(data)
 
     async def update_component(
-        self, component_key: str, payload: Mapping[str, Any]
+        self, component_key: ComponentRef, payload: Mapping[str, Any]
     ) -> ComponentSummary:
+        component_key = _resolve_key(component_key)
         data = await self.request(
             "PUT",
             f"{self._component_root(component_key)}/",
@@ -2507,17 +2779,19 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return ComponentSummary.model_validate(data)
 
-    async def delete_component(self, component_key: str) -> None:
+    async def delete_component(self, component_key: ComponentRef) -> None:
+        component_key = _resolve_key(component_key)
         await self.request(
             "DELETE", f"{self._component_root(component_key)}/", parse_json=False
         )
 
     async def list_component_versions(
         self,
-        component_key: str,
+        component_key: ComponentRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> SchemaVersionList:
+        component_key = _resolve_key(component_key)
         data = await self.request(
             "GET", f"{self._component_versions_base(component_key)}/", params=params
         )
@@ -2525,11 +2799,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_component_version(
         self,
-        component_key: str,
+        component_key: ComponentRef,
         payload: Mapping[str, Any],
         *,
-        copy_from: str | None = None,
+        copy_from: SchemaVersionRef | None = None,
     ) -> SchemaVersionSummary:
+        component_key = _resolve_key(component_key)
+        copy_from = _resolve_key(copy_from) if copy_from is not None else None
         params = {"copy_from": copy_from} if copy_from else None
         data = await self.request(
             "POST",
@@ -2541,11 +2817,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def get_component_version(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         *,
         include_schema: bool | None = None,
     ) -> SchemaVersionSummary:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         params = (
             {"include_schema": str(include_schema).lower()}
             if include_schema is not None
@@ -2560,9 +2838,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def publish_component_version(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
     ) -> SchemaVersionSummary:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "POST",
             f"{self._component_versions_base(component_key)}/{version_key}/publish/",
@@ -2571,10 +2851,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_component_version(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> SchemaVersionSummary:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "PUT",
             f"{self._component_versions_base(component_key)}/{version_key}/",
@@ -2583,8 +2865,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return SchemaVersionSummary.model_validate(data)
 
     async def delete_component_version(
-        self, component_key: str, version_key: str
+        self, component_key: ComponentRef, version_key: SchemaVersionRef
     ) -> None:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         await self.request(
             "DELETE",
             f"{self._component_versions_base(component_key)}/{version_key}/",
@@ -2593,11 +2877,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def list_component_fields(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> FieldList:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "GET",
             f"{self._component_schema_tree(component_key, version_key)}/",
@@ -2607,10 +2893,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_component_field(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "POST",
             f"{self._component_schema_tree(component_key, version_key)}/",
@@ -2620,10 +2908,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def get_component_field(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         field_path: str,
     ) -> FieldSummary:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "GET",
             f"{self._component_schema_tree(component_key, version_key)}/field/",
@@ -2633,11 +2923,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_component_field(
         self,
-        component_key: str,
-        version_key: str,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
         field_path: str,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "PUT",
             f"{self._component_schema_tree(component_key, version_key)}/field/",
@@ -2647,8 +2939,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return FieldSummary.model_validate(data)
 
     async def delete_component_field(
-        self, component_key: str, version_key: str, field_path: str
+        self,
+        component_key: ComponentRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
     ) -> None:
+        component_key = _resolve_key(component_key)
+        version_key = _resolve_key(version_key)
         await self.request(
             "DELETE",
             f"{self._component_schema_tree(component_key, version_key)}/field/",
@@ -2658,10 +2955,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def list_folder_versions(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> SchemaVersionList:
+        folder_key = _resolve_key(folder_key)
         data = await self.request(
             "GET", f"{self._folder_versions_base(folder_key)}/", params=params
         )
@@ -2669,11 +2967,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_folder_version(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        copy_from: str | None = None,
+        copy_from: SchemaVersionRef | None = None,
     ) -> SchemaVersionSummary:
+        folder_key = _resolve_key(folder_key)
+        copy_from = _resolve_key(copy_from) if copy_from is not None else None
         params = {"copy_from": copy_from} if copy_from else None
         data = await self.request(
             "POST",
@@ -2685,11 +2985,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def get_folder_version(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         *,
         include_schema: bool | None = None,
     ) -> SchemaVersionSummary:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         params = (
             {"include_schema": str(include_schema).lower()}
             if include_schema is not None
@@ -2704,10 +3006,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_folder_version(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> SchemaVersionSummary:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "PUT",
             f"{self._folder_versions_base(folder_key)}/{version_key}/",
@@ -2715,7 +3019,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return SchemaVersionSummary.model_validate(data)
 
-    async def delete_folder_version(self, folder_key: str, version_key: str) -> None:
+    async def delete_folder_version(
+        self, folder_key: FolderRef, version_key: SchemaVersionRef
+    ) -> None:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         await self.request(
             "DELETE",
             f"{self._folder_versions_base(folder_key)}/{version_key}/",
@@ -2724,9 +3032,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def publish_folder_version(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
     ) -> SchemaVersionSummary:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "POST",
             f"{self._folder_versions_base(folder_key)}/{version_key}/publish/",
@@ -2735,11 +3045,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def list_folder_fields(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> FieldList:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "GET",
             f"{self._folder_schema_tree(folder_key, version_key)}/",
@@ -2749,10 +3061,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_folder_field(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "POST",
             f"{self._folder_schema_tree(folder_key, version_key)}/",
@@ -2762,10 +3076,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def get_folder_field(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         field_path: str,
     ) -> FieldSummary:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "GET",
             f"{self._folder_schema_tree(folder_key, version_key)}/field/",
@@ -2775,11 +3091,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_folder_field(
         self,
-        folder_key: str,
-        version_key: str,
+        folder_key: FolderRef,
+        version_key: SchemaVersionRef,
         field_path: str,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         data = await self.request(
             "PUT",
             f"{self._folder_schema_tree(folder_key, version_key)}/field/",
@@ -2789,8 +3107,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return FieldSummary.model_validate(data)
 
     async def delete_folder_field(
-        self, folder_key: str, version_key: str, field_path: str
+        self, folder_key: FolderRef, version_key: SchemaVersionRef, field_path: str
     ) -> None:
+        folder_key = _resolve_key(folder_key)
+        version_key = _resolve_key(version_key)
         await self.request(
             "DELETE",
             f"{self._folder_schema_tree(folder_key, version_key)}/field/",
@@ -2799,49 +3119,64 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
 
     async def list_projects(
-        self, org_key: str, *, params: Mapping[str, Any] | None = None
+        self, org_key: OrgRef, *, params: Mapping[str, Any] | None = None
     ) -> ProjectList:
+        org_key = _resolve_key(org_key)
         data = await self.request(
             "GET", f"{self._projects_base(org_key)}/", params=params
         )
         return ProjectList.model_validate(data)
 
-    async def get_project(self, org_key: str, project_key: str) -> ProjectSummary:
+    async def get_project(
+        self, org_key: OrgRef, project_key: ProjectRef
+    ) -> ProjectSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         data = await self.request("GET", f"{self._project_root(org_key, project_key)}/")
         return ProjectSummary.model_validate(data)
 
     async def create_project(
-        self, org_key: str, payload: Mapping[str, Any]
+        self, org_key: OrgRef, payload: Mapping[str, Any]
     ) -> ProjectSummary:
+        org_key = _resolve_key(org_key)
         data = await self.request(
             "POST", f"{self._projects_base(org_key)}/", json_body=payload
         )
         return ProjectSummary.model_validate(data)
 
     async def update_project(
-        self, org_key: str, project_key: str, payload: Mapping[str, Any]
+        self, org_key: OrgRef, project_key: ProjectRef, payload: Mapping[str, Any]
     ) -> ProjectSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         data = await self.request(
             "PUT", f"{self._project_root(org_key, project_key)}/", json_body=payload
         )
         return ProjectSummary.model_validate(data)
 
-    async def delete_project(self, org_key: str, project_key: str) -> None:
+    async def delete_project(self, org_key: OrgRef, project_key: ProjectRef) -> None:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         await self.request(
             "DELETE", f"{self._project_root(org_key, project_key)}/", parse_json=False
         )
 
     async def list_environments(
-        self, org_key: str, project_key: str
+        self, org_key: OrgRef, project_key: ProjectRef
     ) -> EnvironmentList:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         payload = await self.request(
             "GET", f"{self._environments_base(org_key, project_key)}/"
         )
         return ManagementClient._coerce_environment_list(payload)
 
     async def get_environment(
-        self, org_key: str, project_key: str, env_key: str
+        self, org_key: OrgRef, project_key: ProjectRef, env_key: EnvironmentRef
     ) -> EnvironmentSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         data = await self.request(
             "GET", f"{self._environment_root(org_key, project_key, env_key)}/"
         )
@@ -2849,10 +3184,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_environment(
         self,
-        org_key: str,
-        project_key: str,
+        org_key: OrgRef,
+        project_key: ProjectRef,
         payload: Mapping[str, Any],
     ) -> EnvironmentSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
         data = await self.request(
             "POST",
             f"{self._environments_base(org_key, project_key)}/",
@@ -2862,11 +3199,14 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_environment(
         self,
-        org_key: str,
-        project_key: str,
-        env_key: str,
+        org_key: OrgRef,
+        project_key: ProjectRef,
+        env_key: EnvironmentRef,
         payload: Mapping[str, Any],
     ) -> EnvironmentSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         data = await self.request(
             "PUT",
             f"{self._environment_root(org_key, project_key, env_key)}/",
@@ -2875,8 +3215,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return EnvironmentSummary.model_validate(data)
 
     async def delete_environment(
-        self, org_key: str, project_key: str, env_key: str
+        self, org_key: OrgRef, project_key: ProjectRef, env_key: EnvironmentRef
     ) -> None:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         await self.request(
             "DELETE",
             f"{self._environment_root(org_key, project_key, env_key)}/",
@@ -2884,8 +3227,16 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
 
     async def toggle_environment(
-        self, org_key: str, project_key: str, env_key: str, *, is_enabled: bool
+        self,
+        org_key: OrgRef,
+        project_key: ProjectRef,
+        env_key: EnvironmentRef,
+        *,
+        is_enabled: bool,
     ) -> None:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         await self.request(
             "POST",
             f"{self._environment_root(org_key, project_key, env_key)}/toggle/",
@@ -2895,13 +3246,16 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_environment_protection(
         self,
-        org_key: str,
-        project_key: str,
-        env_key: str,
+        org_key: OrgRef,
+        project_key: ProjectRef,
+        env_key: EnvironmentRef,
         *,
         protection_level: str,
         protection_reason: str | None = None,
     ) -> EnvironmentSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         payload: dict[str, Any] = {"protection_level": protection_level}
         if protection_reason is not None:
             payload["protection_reason"] = protection_reason
@@ -2913,8 +3267,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return EnvironmentSummary.model_validate(data)
 
     async def clear_environment_protection(
-        self, org_key: str, project_key: str, env_key: str
+        self, org_key: OrgRef, project_key: ProjectRef, env_key: EnvironmentRef
     ) -> EnvironmentSummary:
+        org_key = _resolve_key(org_key)
+        project_key = _resolve_key(project_key)
+        env_key = _resolve_key(env_key)
         return await self.update_environment_protection(
             org_key,
             project_key,
@@ -2955,16 +3312,21 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def list_resources(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> ResourceList:
+        folder_key = _resolve_key(folder_key)
         data = await self.request(
             "GET", f"{self._resource_base(folder_key)}/", params=params
         )
         return ResourceList.model_validate(data)
 
-    async def get_resource(self, folder_key: str, resource_key: str) -> ResourceSummary:
+    async def get_resource(
+        self, folder_key: FolderRef, resource_key: ResourceRef
+    ) -> ResourceSummary:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         data = await self.request(
             "GET", f"{self._resource_base(folder_key)}/{resource_key}/"
         )
@@ -2972,11 +3334,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_resource(
         self,
-        folder_key: str,
+        folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        component: str | None = None,
+        component: ComponentRef | None = None,
     ) -> ResourceSummary:
+        folder_key = _resolve_key(folder_key)
+        component = _resolve_key(component) if component is not None else None
         params = {"component": component} if component else None
         data = await self.request(
             "POST",
@@ -2988,10 +3352,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_resource(
         self,
-        folder_key: str,
-        resource_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
         payload: Mapping[str, Any],
     ) -> ResourceSummary:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         await self.request(
             "PUT",
             f"{self._resource_base(folder_key)}/{resource_key}/",
@@ -3000,7 +3366,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return await self.get_resource(folder_key, resource_key)
 
-    async def delete_resource(self, folder_key: str, resource_key: str) -> None:
+    async def delete_resource(
+        self, folder_key: FolderRef, resource_key: ResourceRef
+    ) -> None:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         await self.request(
             "DELETE",
             f"{self._resource_base(folder_key)}/{resource_key}/",
@@ -3008,19 +3378,23 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
 
     async def get_resource_data(
-        self, folder_key: str, resource_key: str
+        self, folder_key: FolderRef, resource_key: ResourceRef
     ) -> Mapping[str, Any]:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         return await self.request(
             "GET", f"{self._resource_base(folder_key)}/{resource_key}/data/"
         )
 
     async def list_revisions(
         self,
-        folder_key: str,
-        resource_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> RevisionList:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         data = await self.request(
             "GET", f"{self._revision_base(folder_key, resource_key)}/", params=params
         )
@@ -3028,10 +3402,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def create_revision(
         self,
-        folder_key: str,
-        resource_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
         payload: Mapping[str, Any],
     ) -> RevisionSummary:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
         data = await self.request(
             "POST",
             f"{self._revision_base(folder_key, resource_key)}/",
@@ -3041,10 +3417,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def get_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> RevisionSummary:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         data = await self.request(
             "GET",
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/",
@@ -3053,11 +3432,14 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def update_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
         payload: Mapping[str, Any],
     ) -> RevisionSummary:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         data = await self.request(
             "PUT",
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/",
@@ -3066,8 +3448,14 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return RevisionSummary.model_validate(data)
 
     async def delete_revision(
-        self, folder_key: str, resource_key: str, revision_key: str
+        self,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> None:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         await self.request(
             "DELETE",
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/",
@@ -3076,11 +3464,14 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def publish_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
         payload: Mapping[str, Any] | None = None,
     ) -> RevisionSummary:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         data = await self.request(
             "POST",
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/publish/",
@@ -3090,11 +3481,14 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def validate_revision(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> Mapping[str, Any]:
         """Validate a revision before publishing. Returns validation errors if any."""
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         path = (
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/validate/"
         )
@@ -3102,10 +3496,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
     async def get_revision_data(
         self,
-        folder_key: str,
-        resource_key: str,
-        revision_key: str,
+        folder_key: FolderRef,
+        resource_key: ResourceRef,
+        revision_key: RevisionRef,
     ) -> Mapping[str, Any]:
+        folder_key = _resolve_key(folder_key)
+        resource_key = _resolve_key(resource_key)
+        revision_key = _resolve_key(revision_key)
         return await self.request(
             "GET",
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/data/",

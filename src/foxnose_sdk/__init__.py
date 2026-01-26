@@ -20,7 +20,23 @@ from .errors import (
     FoxnoseTransportError,
 )
 from .flux.client import AsyncFluxClient, FluxClient
-from .management.client import AsyncManagementClient, ManagementClient
+from .management.client import (
+    APIRef,
+    AsyncManagementClient,
+    ComponentRef,
+    EnvironmentRef,
+    FluxAPIKeyRef,
+    FluxRoleRef,
+    FolderRef,
+    ManagementAPIKeyRef,
+    ManagementClient,
+    ManagementRoleRef,
+    OrgRef,
+    ProjectRef,
+    ResourceRef,
+    RevisionRef,
+    SchemaVersionRef,
+)
 from .management.models import (
     ComponentList,
     ComponentSummary,
@@ -117,6 +133,19 @@ __all__ = [
     "RolePermission",
     "RolePermissionObject",
     "UserReference",
+    "FolderRef",
+    "ResourceRef",
+    "RevisionRef",
+    "ComponentRef",
+    "SchemaVersionRef",
+    "OrgRef",
+    "ProjectRef",
+    "EnvironmentRef",
+    "ManagementRoleRef",
+    "FluxRoleRef",
+    "ManagementAPIKeyRef",
+    "FluxAPIKeyRef",
+    "APIRef",
 ]
 
 __version__ = "0.1.0"

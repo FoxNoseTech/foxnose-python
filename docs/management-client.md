@@ -27,6 +27,64 @@ client = ManagementClient(
 | `retry_config` | `RetryConfig` | No | Retry configuration |
 | `default_headers` | `Mapping[str, str]` | No | Headers to include in all requests |
 
+## Using Model Objects as Identifiers
+
+All client methods that accept a `*_key` string parameter also accept the corresponding model object. The SDK automatically extracts the `.key` attribute from the object. This means you can pass objects returned by the API directly into subsequent calls without manually extracting keys.
+
+```python
+# Before: manually extracting keys
+folder = client.get_folder("folder-key")
+resources = client.list_resources(folder.key)
+resource = client.get_resource(folder.key, resources.results[0].key)
+
+# After: passing objects directly
+folder = client.get_folder("folder-key")
+resources = client.list_resources(folder)
+resource = client.get_resource(folder, resources.results[0])
+```
+
+This works across all methods and supports chaining naturally:
+
+```python
+# Create a resource and publish a revision in one flow
+folder = client.get_folder("blog-posts")
+resource = client.create_resource(folder, {"title": "New Post"})
+revision = client.create_revision(folder, resource, {"title": "Draft"})
+client.publish_revision(folder, resource, revision)
+```
+
+String keys continue to work everywhere — this is fully backward compatible.
+
+### Available Type Aliases
+
+For type annotations in your own code, the SDK exports these reference types:
+
+| Type alias | Accepts |
+|------------|---------|
+| `FolderRef` | `str` or `FolderSummary` |
+| `ResourceRef` | `str` or `ResourceSummary` |
+| `RevisionRef` | `str` or `RevisionSummary` |
+| `ComponentRef` | `str` or `ComponentSummary` |
+| `SchemaVersionRef` | `str` or `SchemaVersionSummary` |
+| `OrgRef` | `str` or `OrganizationSummary` |
+| `ProjectRef` | `str` or `ProjectSummary` |
+| `EnvironmentRef` | `str` or `EnvironmentSummary` |
+| `ManagementRoleRef` | `str` or `ManagementRoleSummary` |
+| `FluxRoleRef` | `str` or `FluxRoleSummary` |
+| `ManagementAPIKeyRef` | `str` or `ManagementAPIKeySummary` |
+| `FluxAPIKeyRef` | `str` or `FluxAPIKeySummary` |
+| `APIRef` | `str` or `APIInfo` |
+
+```python
+from foxnose_sdk import FolderRef, ResourceRef
+
+def publish_all(client, folder: FolderRef):
+    resources = client.list_resources(folder)
+    for resource in resources.results:
+        revisions = client.list_revisions(folder, resource)
+        # ...
+```
+
 ## Folder Operations
 
 ### List Folders

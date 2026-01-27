@@ -99,8 +99,8 @@ client = ManagementClient(
 
 # Create a Flux API key
 flux_key = client.create_flux_api_key({
-    "name": "Frontend Key",
-    "roles": ["reader-role-key"],
+    "description": "Frontend Key",
+    "role": "reader-role-key",
 })
 
 print(f"Key created: {flux_key.key}")

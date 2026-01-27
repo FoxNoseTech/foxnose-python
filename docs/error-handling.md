@@ -224,8 +224,10 @@ When creating or updating resources, validation errors include field-level detai
 ```python
 try:
     resource = client.create_resource("folder-key", {
-        "title": "",  # Required field is empty
-        "email": "invalid-email",  # Invalid format
+        "data": {
+            "title": "",  # Required field is empty
+            "email": "invalid-email",  # Invalid format
+        },
     })
 except FoxnoseAPIError as e:
     if e.status_code in (400, 422):

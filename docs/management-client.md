@@ -48,8 +48,8 @@ This works across all methods and supports chaining naturally:
 ```python
 # Create a resource and publish a revision in one flow
 folder = client.get_folder("blog-posts")
-resource = client.create_resource(folder, {"title": "New Post"})
-revision = client.create_revision(folder, resource, {"title": "Draft"})
+resource = client.create_resource(folder, {"data": {"title": "New Post"}})
+revision = client.create_revision(folder, resource, {"data": {"title": "Draft"}})
 client.publish_revision(folder, resource, revision)
 ```
 
@@ -157,8 +157,10 @@ resource = client.get_resource("folder-key", "resource-key")
 resource = client.create_resource(
     "folder-key",
     {
-        "title": "My Article",
-        "content": "Article content here...",
+        "data": {
+            "title": "My Article",
+            "content": "Article content here...",
+        },
     },
 )
 ```
@@ -169,10 +171,7 @@ resource = client.create_resource(
 resource = client.update_resource(
     "folder-key",
     "resource-key",
-    {
-        "title": "Updated Title",
-        "content": "Updated content...",
-    },
+    {"name": "Updated Resource Name"},
 )
 ```
 
@@ -203,8 +202,10 @@ revision = client.create_revision(
     "folder-key",
     "resource-key",
     {
-        "title": "New Title",
-        "content": "New content...",
+        "data": {
+            "title": "New Title",
+            "content": "New content...",
+        },
     },
 )
 ```
@@ -257,9 +258,9 @@ field = client.create_folder_field(
     "folder-key",
     "version-key",
     {
-        "name": "title",
-        "alias": "title",
-        "field_type": "text",
+        "key": "title",
+        "name": "Title",
+        "type": "text",
         "required": True,
     },
 )
@@ -295,11 +296,9 @@ role = client.create_management_role({
 client.upsert_management_role_permission(
     "role-key",
     {
-        "content_type": "document",
-        "can_read": True,
-        "can_create": True,
-        "can_update": True,
-        "can_delete": False,
+        "content_type": "resources",
+        "actions": ["read", "create", "update"],
+        "all_objects": True,
     },
 )
 ```
@@ -317,8 +316,9 @@ role = client.create_flux_role({
 client.upsert_flux_role_permission(
     "role-key",
     {
-        "content_type": "document",
-        "can_read": True,
+        "content_type": "flux-apis",
+        "actions": ["read"],
+        "all_objects": True,
     },
 )
 ```
@@ -328,14 +328,14 @@ client.upsert_flux_role_permission(
 ```python
 # Management API key
 mgmt_key = client.create_management_api_key({
-    "name": "CI/CD Key",
-    "roles": ["role-key-1", "role-key-2"],
+    "description": "CI/CD Key",
+    "role": "role-key-1",
 })
 
 # Flux API key
 flux_key = client.create_flux_api_key({
-    "name": "Frontend Key",
-    "roles": ["reader-role"],
+    "description": "Frontend Key",
+    "role": "reader-role",
 })
 ```
 

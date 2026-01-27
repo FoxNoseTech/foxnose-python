@@ -76,10 +76,9 @@ folder = client.get_folder("blog-posts")
 resources = client.list_resources(folder)
 
 # Chain objects through a full workflow
-resource = client.create_resource(folder, {"title": "New Article"})
+resource = client.create_resource(folder, {"data": {"title": "New Article"}})
 revision = client.create_revision(folder, resource, {
-    "title": "Draft Content",
-    "body": "...",
+    "data": {"title": "Draft Content", "body": "..."},
 })
 client.publish_revision(folder, resource, revision)
 
@@ -104,15 +103,14 @@ Complete resource lifecycle management:
 ```python
 # Create a resource
 resource = client.create_resource("blog-posts", {
-    "title": "My First Post",
-    "content": "Hello, world!",
+    "data": {"title": "My First Post", "content": "Hello, world!"},
 })
 
 # Create a new revision
 revision = client.create_revision(
     "blog-posts",
     resource.key,
-    {"title": "Updated Title", "content": "Updated content"},
+    {"data": {"title": "Updated Title", "content": "Updated content"}},
 )
 
 # Publish the revision
@@ -136,9 +134,9 @@ version = client.create_folder_version("blog-posts", {"name": "v2.0"})
 
 # Add fields
 client.create_folder_field("blog-posts", version.key, {
-    "name": "author",
-    "alias": "author",
-    "field_type": "text",
+    "key": "author",
+    "name": "Author",
+    "type": "text",
     "required": True,
 })
 
@@ -166,17 +164,15 @@ role = client.create_management_role({
 
 # Add permissions
 client.upsert_management_role_permission(role.key, {
-    "content_type": "document",
-    "can_read": True,
-    "can_create": True,
-    "can_update": True,
-    "can_delete": False,
+    "content_type": "resources",
+    "actions": ["read", "create", "update"],
+    "all_objects": True,
 })
 
 # Create an API key with this role
 api_key = client.create_management_api_key({
-    "name": "Editor Key",
-    "roles": [role.key],
+    "description": "Editor Key",
+    "role": role.key,
 })
 ```
 
@@ -203,10 +199,10 @@ client = FluxClient(
 
 # Get published content
 resource = client.get_resource("blog-posts", "my-article")
-print(resource["title"])
+print(resource["data"]["title"])
 
 # Search for content
-results = client.search("blog-posts", body={"query": "python"})
+results = client.search("blog-posts", body={"find_text": {"query": "python"}})
 ```
 
 ## Running Examples

@@ -46,7 +46,7 @@ docs = [
 ]
 
 [project.urls]
-"Homepage" = "https://foxnose.net"
+"Homepage" = "https://foxnose.net?utm_source=pypi&utm_medium=repository&utm_campaign=foxnose-python"
 "Source" = "https://github.com/FoxNoseTech/foxnose-python"
 "Documentation" = "https://foxnose-python.readthedocs.io"
 

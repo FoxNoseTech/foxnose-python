@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/FoxNoseTech/foxnose-python/graph/badge.svg)](https://codecov.io/gh/FoxNoseTech/foxnose-python)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-[FoxNose](https://foxnose.net) is a managed knowledge layer for RAG and AI agents — auto-embeddings, hybrid search, and zero ETL pipelines to maintain.
+[FoxNose](https://foxnose.net?utm_source=github&utm_medium=repository&utm_campaign=foxnose-python) is a managed knowledge layer for RAG and AI agents — auto-embeddings, hybrid search, and zero ETL pipelines to maintain.
 
 This is the official Python SDK for FoxNose Management and Flux APIs.
 
@@ -22,10 +22,10 @@ This is the official Python SDK for FoxNose Management and Flux APIs.
 **SDK Documentation:** [foxnose-python.readthedocs.io](https://foxnose-python.readthedocs.io)
 
 **FoxNose Platform:**
-- [Product Documentation](https://foxnose.net/docs)
-- [Guides](https://foxnose.net/docs/guides)
-- [Management API Reference](https://foxnose.net/docs/management-api/v1/get-started)
-- [Flux API Reference](https://foxnose.net/docs/flux-api/v1/get-started)
+- [Product Documentation](https://foxnose.net/docs?utm_source=github&utm_medium=repository&utm_campaign=foxnose-python)
+- [Guides](https://foxnose.net/docs/guides?utm_source=github&utm_medium=repository&utm_campaign=foxnose-python)
+- [Management API Reference](https://foxnose.net/docs/management-api/v1/get-started?utm_source=github&utm_medium=repository&utm_campaign=foxnose-python)
+- [Flux API Reference](https://foxnose.net/docs/flux-api/v1/get-started?utm_source=github&utm_medium=repository&utm_campaign=foxnose-python)
 
 ## Installation
 

@@ -45,14 +45,11 @@ Fetch a list of published resources from a folder:
 ```python
 resources = client.list_resources(
     "blog-posts",  # folder path
-    params={
-        "limit": 10,
-        "offset": 0,
-    },
+    params={"limit": 10},
 )
 
 for resource in resources["results"]:
-    print(f"{resource['key']}: {resource['title']}")
+    print(f"{resource['_sys']['key']}: {resource['data']['title']}")
 ```
 
 ### Get Resource
@@ -61,8 +58,8 @@ Fetch a specific resource by key:
 
 ```python
 resource = client.get_resource("blog-posts", "my-first-post")
-print(resource["title"])
-print(resource["content"])
+print(resource["data"]["title"])
+print(resource["data"]["content"])
 ```
 
 ### Get Resource with Params
@@ -71,7 +68,7 @@ print(resource["content"])
 resource = client.get_resource(
     "blog-posts",
     "my-article",
-    params={"locale": "de-DE"},
+    params={"return_locales": "de"},
 )
 ```
 
@@ -83,13 +80,13 @@ Search for resources within a folder:
 results = client.search(
     "blog-posts",
     body={
-        "query": "python tutorial",
+        "find_text": {"query": "python tutorial"},
         "limit": 10,
     },
 )
 
-for hit in results["hits"]:
-    print(f"{hit['title']} (score: {hit['_score']})")
+for item in results["results"]:
+    print(item["data"]["title"])
 ```
 
 ## Query Parameters
@@ -100,8 +97,8 @@ for hit in results["hits"]:
 resources = client.list_resources(
     "products",
     params={
-        "filter[category]": "electronics",
-        "filter[in_stock]": "true",
+        "where__category__eq": "electronics",
+        "where__in_stock__eq": "true",
     },
 )
 ```
@@ -121,12 +118,13 @@ resources = client.list_resources(
 
 ```python
 # First page
-page1 = client.list_resources("posts", params={"limit": 10, "offset": 0})
+page1 = client.list_resources("posts", params={"limit": 10})
 
-# Second page
-page2 = client.list_resources("posts", params={"limit": 10, "offset": 10})
+# Next page (use the cursor from the previous response)
+if page1["next"]:
+    page2 = client.list_resources("posts", params={"limit": 10, "next": "<cursor>"})
 
-print(f"Total: {page1['count']}")
+print(f"Got {len(page1['results'])} items")
 ```
 
 ## Error Handling

@@ -1,5 +1,5 @@
 site_name: FoxNose Python SDK
-site_url: https://foxnosetech.github.io/foxnose-python/
+site_url: https://foxnose-python.readthedocs.io/en/latest/
 site_description: Official Python client for FoxNose Management and Flux APIs
 site_author: FoxNose
 
@@ -83,6 +83,6 @@ extra:
     - icon: fontawesome/brands/github
       link: https://github.com/FoxNoseTech/foxnose-python
     - icon: fontawesome/solid/globe
-      link: https://foxnose.net
+      link: https://foxnose.net?utm_source=readthedocs&utm_medium=documentation&utm_campaign=foxnose-python
 
 copyright: Copyright &copy; 2024-2026 FoxNose

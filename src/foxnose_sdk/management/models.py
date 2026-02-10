@@ -29,6 +29,7 @@ class ResourceSummary(BaseModel):
     component: str | None = None
     resource_owner: str | None = None
     current_revision: str | None = None
+    external_id: str | None = None
 
 
 class RevisionSummary(BaseModel):

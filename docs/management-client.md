@@ -165,6 +165,54 @@ resource = client.create_resource(
 )
 ```
 
+You can assign an `external_id` during creation to identify the resource by your own system's ID:
+
+```python
+resource = client.create_resource(
+    "folder-key",
+    {"title": "Imported Article", "content": "..."},
+    external_id="cms-article-42",
+)
+```
+
+### Upsert Resource
+
+Create or update a resource in a single call using an `external_id`. If no resource with the given `external_id` exists in the folder, a new resource is created. If one already exists, a new revision is created for it.
+
+```python
+# First call: creates the resource
+resource = client.upsert_resource(
+    "folder-key",
+    {"title": "My Article", "content": "First version"},
+    external_id="cms-article-42",
+)
+
+# Second call with the same external_id: updates (creates a new revision)
+resource = client.upsert_resource(
+    "folder-key",
+    {"title": "My Article", "content": "Updated version"},
+    external_id="cms-article-42",
+)
+```
+
+For component-based folders, pass the `component` parameter:
+
+```python
+resource = client.upsert_resource(
+    "folder-key",
+    {"title": "Product", "price": 29.99},
+    external_id="product-100",
+    component="product-component",
+)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `folder_key` | `FolderRef` | Yes | Target folder key or object |
+| `payload` | `dict` | Yes | JSON payload matching the folder schema |
+| `external_id` | `str` | Yes | External identifier for the resource |
+| `component` | `ComponentRef` | No | Component key for composite folders |
+
 ### Update Resource
 
 ```python

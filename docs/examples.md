@@ -117,6 +117,35 @@ revision = client.create_revision(
 client.publish_revision("blog-posts", resource.key, revision.key)
 ```
 
+### Upsert (Create or Update by External ID)
+
+Use `upsert_resource` to sync content from an external system. The SDK creates the resource on the first call and updates it on subsequent calls, matched by `external_id`.
+
+```python
+articles = [
+    {"id": "ext-1", "title": "First Article", "body": "..."},
+    {"id": "ext-2", "title": "Second Article", "body": "..."},
+]
+
+for article in articles:
+    resource = client.upsert_resource(
+        "blog-posts",
+        {"title": article["title"], "body": article["body"]},
+        external_id=article["id"],
+    )
+    print(f"{resource.key} (external_id={resource.external_id})")
+```
+
+You can also set an `external_id` when creating resources via `create_resource`:
+
+```python
+resource = client.create_resource(
+    "blog-posts",
+    {"title": "Imported Post"},
+    external_id="legacy-post-99",
+)
+```
+
 ### Folder Schema
 
 **File:** `examples/folder_schema.py`

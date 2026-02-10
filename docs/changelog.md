@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`upsert_resource()`** method on `ManagementClient` and `AsyncManagementClient` — create or update a resource by `external_id` in a single call. Uses `PUT /folders/:folder/resources/?external_id=<value>`.
+- **`external_id`** optional parameter on `create_resource()` — assign an external identifier when creating a resource via `POST`.
+- **`external_id`** field on `ResourceSummary` model — populated in API responses for resources that have an external identifier.
+
 ## [0.2.0] - 2026-01-26
 
 ### Added

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
+from collections.abc import Callable, Sequence
 from typing import Any, Mapping, Union
 
 from pydantic import BaseModel
@@ -12,6 +15,9 @@ from .models import (
     APIFolderSummary,
     APIInfo,
     APIList,
+    BatchItemError,
+    BatchUpsertItem,
+    BatchUpsertResult,
     ComponentList,
     ComponentSummary,
     EnvironmentList,
@@ -2009,6 +2015,87 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return ResourceSummary.model_validate(data)
 
+    def batch_upsert_resources(
+        self,
+        folder_key: FolderRef,
+        items: Sequence[BatchUpsertItem],
+        *,
+        max_concurrency: int = 5,
+        fail_fast: bool = False,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> BatchUpsertResult:
+        """
+        Upsert multiple resources concurrently using threads.
+
+        Each item is processed via :meth:`upsert_resource`. Results are
+        collected into a :class:`BatchUpsertResult` containing succeeded
+        and failed lists.
+
+        Args:
+            folder_key: Target folder key (shared across all items).
+            items: Sequence of :class:`BatchUpsertItem` to upsert.
+            max_concurrency: Maximum number of parallel workers (default 5).
+            fail_fast: If ``True``, stop on first error and raise it.
+                If ``False`` (default), collect all results.
+            on_progress: Optional callback invoked as
+                ``(completed_count, total_count)`` after each item finishes.
+        """
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
+        folder_key = _resolve_key(folder_key)
+        total = len(items)
+        if total == 0:
+            return BatchUpsertResult()
+
+        succeeded: list[ResourceSummary] = []
+        failed: list[BatchItemError] = []
+        completed = 0
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_concurrency,
+        ) as executor:
+            future_to_item: dict[
+                concurrent.futures.Future[ResourceSummary],
+                tuple[int, BatchUpsertItem],
+            ] = {
+                executor.submit(
+                    self.upsert_resource,
+                    folder_key,
+                    item.payload,
+                    external_id=item.external_id,
+                    component=item.component,
+                ): (idx, item)
+                for idx, item in enumerate(items)
+            }
+
+            for future in concurrent.futures.as_completed(future_to_item):
+                idx, item = future_to_item[future]
+                try:
+                    result = future.result()
+                    succeeded.append(result)
+                except Exception as exc:
+                    if fail_fast:
+                        # Cancel remaining futures and propagate.
+                        for f in future_to_item:
+                            f.cancel()
+                        raise
+                    failed.append(
+                        BatchItemError(
+                            index=idx,
+                            external_id=item.external_id,
+                            exception=exc,
+                        )
+                    )
+                finally:
+                    completed += 1
+                    if on_progress is not None:
+                        try:
+                            on_progress(completed, total)
+                        except Exception:
+                            pass
+
+        return BatchUpsertResult(succeeded=succeeded, failed=failed)
+
     def update_resource(
         self,
         folder_key: FolderRef,
@@ -3426,6 +3513,89 @@ class AsyncManagementClient(_ManagementPathsMixin):
             json_body=payload,
         )
         return ResourceSummary.model_validate(data)
+
+    async def batch_upsert_resources(
+        self,
+        folder_key: FolderRef,
+        items: Sequence[BatchUpsertItem],
+        *,
+        max_concurrency: int = 5,
+        fail_fast: bool = False,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> BatchUpsertResult:
+        """
+        Upsert multiple resources concurrently using async tasks.
+
+        Each item is processed via :meth:`upsert_resource`. Results are
+        collected into a :class:`BatchUpsertResult` containing succeeded
+        and failed lists.
+
+        Args:
+            folder_key: Target folder key (shared across all items).
+            items: Sequence of :class:`BatchUpsertItem` to upsert.
+            max_concurrency: Maximum number of parallel workers (default 5).
+            fail_fast: If ``True``, stop on first error and raise it.
+                If ``False`` (default), collect all results.
+            on_progress: Optional callback invoked as
+                ``(completed_count, total_count)`` after each item finishes.
+        """
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
+        folder_key = _resolve_key(folder_key)
+        total = len(items)
+        if total == 0:
+            return BatchUpsertResult()
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+        succeeded: list[ResourceSummary] = []
+        failed: list[BatchItemError] = []
+        completed = 0
+        first_error: Exception | None = None
+        cancel_event = asyncio.Event()
+
+        async def _process(index: int, item: BatchUpsertItem) -> None:
+            nonlocal completed, first_error
+            if cancel_event.is_set():
+                return
+            async with semaphore:
+                if cancel_event.is_set():
+                    return
+                try:
+                    result = await self.upsert_resource(
+                        folder_key,
+                        item.payload,
+                        external_id=item.external_id,
+                        component=item.component,
+                    )
+                    succeeded.append(result)
+                except Exception as exc:
+                    if fail_fast:
+                        if first_error is None:
+                            first_error = exc
+                        cancel_event.set()
+                        return
+                    failed.append(
+                        BatchItemError(
+                            index=index,
+                            external_id=item.external_id,
+                            exception=exc,
+                        )
+                    )
+                finally:
+                    completed += 1
+                    if on_progress is not None:
+                        try:
+                            on_progress(completed, total)
+                        except Exception:
+                            pass
+
+        tasks = [asyncio.create_task(_process(i, item)) for i, item in enumerate(items)]
+        await asyncio.gather(*tasks)
+
+        if fail_fast and first_error is not None:
+            raise first_error
+
+        return BatchUpsertResult(succeeded=succeeded, failed=failed)
 
     async def update_resource(
         self,

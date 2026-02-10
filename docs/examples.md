@@ -146,6 +146,33 @@ resource = client.create_resource(
 )
 ```
 
+### Batch Upsert
+
+Use `batch_upsert_resources` to upsert many resources in parallel. This is much faster than calling `upsert_resource` in a loop:
+
+```python
+from foxnose_sdk import ManagementClient, BatchUpsertItem
+
+items = [
+    BatchUpsertItem(
+        external_id=f"article-{i}",
+        payload={"title": f"Article {i}", "body": "..."},
+    )
+    for i in range(1000)
+]
+
+result = client.batch_upsert_resources(
+    "blog-posts",
+    items,
+    max_concurrency=10,
+    on_progress=lambda done, total: print(f"\r{done}/{total}", end=""),
+)
+
+print(f"\nSucceeded: {result.success_count}, Failed: {result.failure_count}")
+for error in result.failed:
+    print(f"  Item {error.index} ({error.external_id}): {error.exception}")
+```
+
 ### Folder Schema
 
 **File:** `examples/folder_schema.py`

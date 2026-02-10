@@ -17,7 +17,15 @@ from .client import (
     RevisionRef,
     SchemaVersionRef,
 )
-from .models import ResourceList, ResourceSummary, RevisionList, RevisionSummary
+from .models import (
+    BatchItemError,
+    BatchUpsertItem,
+    BatchUpsertResult,
+    ResourceList,
+    ResourceSummary,
+    RevisionList,
+    RevisionSummary,
+)
 
 __all__ = [
     "ManagementClient",
@@ -26,6 +34,9 @@ __all__ = [
     "ResourceList",
     "RevisionSummary",
     "RevisionList",
+    "BatchUpsertItem",
+    "BatchItemError",
+    "BatchUpsertResult",
     "FolderRef",
     "ResourceRef",
     "RevisionRef",

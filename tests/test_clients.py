@@ -12,7 +12,11 @@ from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import FluxClient
 from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import ManagementClient, _resolve_key
+from foxnose_sdk.errors import FoxnoseAPIError
 from foxnose_sdk.management.models import (
+    BatchItemError,
+    BatchUpsertItem,
+    BatchUpsertResult,
     FolderSummary,
     ResourceSummary,
     RevisionSummary,
@@ -1111,6 +1115,183 @@ def test_resource_summary_parses_without_external_id_field():
     raw = {k: v for k, v in RESOURCE_JSON.items() if k != "external_id"}
     summary = ResourceSummary.model_validate(raw)
     assert summary.external_id is None
+
+
+# ---------------------------------------------------------------------------
+# batch_upsert_resources
+# ---------------------------------------------------------------------------
+
+
+def test_batch_upsert_resources_success():
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
+        resource_json = {**RESOURCE_JSON, "external_id": ext_id}
+        call_count += 1
+        return httpx.Response(200, json=resource_json)
+
+    client = build_management_client(handler)
+    items = [
+        BatchUpsertItem(external_id=f"ext-{i}", payload={"title": f"Item {i}"})
+        for i in range(3)
+    ]
+    result = client.batch_upsert_resources("folder-1", items)
+
+    assert isinstance(result, BatchUpsertResult)
+    assert result.success_count == 3
+    assert result.failure_count == 0
+    assert result.has_failures is False
+    assert result.total == 3
+    assert call_count == 3
+    returned_ext_ids = {r.external_id for r in result.succeeded}
+    assert returned_ext_ids == {"ext-0", "ext-1", "ext-2"}
+
+
+def test_batch_upsert_resources_empty_list():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("handler should not be called")
+
+    client = build_management_client(handler)
+    result = client.batch_upsert_resources("folder-1", [])
+
+    assert result.success_count == 0
+    assert result.failure_count == 0
+    assert result.total == 0
+    assert result.has_failures is False
+
+
+def test_batch_upsert_resources_partial_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
+        # Fail requests where external_id ends with "1" (index 1)
+        if ext_id == "ext-1":
+            return httpx.Response(
+                400, json={"message": "Bad request", "error_code": "validation_error"}
+            )
+        resource_json = {**RESOURCE_JSON, "external_id": ext_id}
+        return httpx.Response(200, json=resource_json)
+
+    client = build_management_client(handler)
+    items = [
+        BatchUpsertItem(external_id=f"ext-{i}", payload={"title": f"Item {i}"})
+        for i in range(3)
+    ]
+    result = client.batch_upsert_resources("folder-1", items)
+
+    assert result.success_count == 2
+    assert result.failure_count == 1
+    assert result.has_failures is True
+    assert len(result.failed) == 1
+    error = result.failed[0]
+    assert isinstance(error, BatchItemError)
+    assert error.external_id == "ext-1"
+    assert isinstance(error.exception, FoxnoseAPIError)
+    assert error.exception.status_code == 400
+
+
+def test_batch_upsert_resources_fail_fast():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, json={"message": "Bad request", "error_code": "validation_error"}
+        )
+
+    client = build_management_client(handler)
+    items = [
+        BatchUpsertItem(external_id=f"ext-{i}", payload={"title": f"Item {i}"})
+        for i in range(5)
+    ]
+    with pytest.raises(FoxnoseAPIError) as exc_info:
+        client.batch_upsert_resources("folder-1", items, fail_fast=True)
+    assert exc_info.value.status_code == 400
+
+
+def test_batch_upsert_resources_max_concurrency():
+    import threading
+
+    peak = 0
+    current = 0
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal peak, current
+        with lock:
+            current += 1
+            if current > peak:
+                peak = current
+        import time
+
+        time.sleep(0.05)
+        with lock:
+            current -= 1
+        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
+        return httpx.Response(200, json={**RESOURCE_JSON, "external_id": ext_id})
+
+    client = build_management_client(handler)
+    items = [
+        BatchUpsertItem(external_id=f"ext-{i}", payload={"title": f"Item {i}"})
+        for i in range(6)
+    ]
+    result = client.batch_upsert_resources("folder-1", items, max_concurrency=2)
+    assert result.success_count == 6
+    assert peak <= 2
+
+
+def test_batch_upsert_resources_progress_callback():
+    def handler(request: httpx.Request) -> httpx.Response:
+        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
+        return httpx.Response(200, json={**RESOURCE_JSON, "external_id": ext_id})
+
+    progress_calls: list[tuple[int, int]] = []
+
+    client = build_management_client(handler)
+    items = [
+        BatchUpsertItem(external_id=f"ext-{i}", payload={"title": f"Item {i}"})
+        for i in range(3)
+    ]
+    result = client.batch_upsert_resources(
+        "folder-1",
+        items,
+        on_progress=lambda done, total: progress_calls.append((done, total)),
+    )
+    assert result.success_count == 3
+    assert len(progress_calls) == 3
+    # All calls should have total=3
+    assert all(total == 3 for _, total in progress_calls)
+    # Completed counts should cover 1, 2, 3
+    completed_values = sorted(done for done, _ in progress_calls)
+    assert completed_values == [1, 2, 3]
+
+
+def test_batch_upsert_resources_with_component():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(str(request.url))
+        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
+        return httpx.Response(200, json={**RESOURCE_JSON, "external_id": ext_id})
+
+    client = build_management_client(handler)
+    items = [
+        BatchUpsertItem(
+            external_id="ext-1", payload={"title": "Item"}, component="comp-1"
+        )
+    ]
+    result = client.batch_upsert_resources("folder-1", items)
+    assert result.success_count == 1
+    assert "component=comp-1" in captured[0]
+    assert "external_id=ext-1" in captured[0]
+
+
+def test_batch_upsert_resources_rejects_zero_concurrency():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=RESOURCE_JSON)
+
+    client = build_management_client(handler)
+    items = [BatchUpsertItem(external_id="ext-1", payload={"title": "Item"})]
+    with pytest.raises(ValueError, match="max_concurrency must be at least 1"):
+        client.batch_upsert_resources("folder-1", items, max_concurrency=0)
 
 
 def test_publish_revision_uses_nested_path():

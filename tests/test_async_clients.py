@@ -70,6 +70,7 @@ RESOURCE_JSON = {
     "component": None,
     "resource_owner": None,
     "current_revision": "rev-1",
+    "external_id": None,
 }
 
 REVISION_JSON = {
@@ -1096,6 +1097,107 @@ async def test_async_create_resource_with_component():
     assert result.key == "resource-1"
     assert "component=comp-1" in captured["url"]
     assert captured["body"]["data"]["title"] == "Hello"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_create_resource_with_external_id():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-1"}
+        return httpx.Response(201, json=resource_json)
+
+    client = build_async_management_client(handler)
+    result = await client.create_resource(
+        "folder-1", {"data": {"title": "Hello"}}, external_id="ext-1"
+    )
+    assert result.key == "resource-1"
+    assert result.external_id == "ext-1"
+    assert captured["body"]["external_id"] == "ext-1"
+    assert captured["body"]["data"]["title"] == "Hello"
+    # external_id goes in the body, not in query params
+    assert "external_id=" not in captured["url"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_create_resource_without_external_id_omits_field():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_async_management_client(handler)
+    await client.create_resource("folder-1", {"data": {"title": "Hello"}})
+    assert "external_id" not in captured["body"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_create_resource_does_not_mutate_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_async_management_client(handler)
+    original = {"data": {"title": "Hello"}}
+    await client.create_resource("folder-1", original, external_id="ext-1")
+    assert "external_id" not in original
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_upsert_resource_sends_put_with_external_id():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        resource_json = {**RESOURCE_JSON, "external_id": "my-ext-id"}
+        return httpx.Response(200, json=resource_json)
+
+    client = build_async_management_client(handler)
+    result = await client.upsert_resource(
+        "folder-1",
+        {"data": {"title": "Upserted"}},
+        external_id="my-ext-id",
+    )
+    assert captured["method"] == "PUT"
+    assert captured["url"].endswith("/resources/?external_id=my-ext-id")
+    assert captured["body"]["data"]["title"] == "Upserted"
+    # upsert sends external_id as query param, not in body
+    assert "external_id" not in captured["body"]
+    assert result.key == "resource-1"
+    assert result.external_id == "my-ext-id"
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_upsert_resource_with_component():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["method"] = request.method
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-2", "component": "comp-1"}
+        return httpx.Response(201, json=resource_json)
+
+    client = build_async_management_client(handler)
+    result = await client.upsert_resource(
+        "folder-1",
+        {"data": {"title": "New"}},
+        external_id="ext-2",
+        component="comp-1",
+    )
+    assert captured["method"] == "PUT"
+    assert "external_id=ext-2" in captured["url"]
+    assert "component=comp-1" in captured["url"]
+    assert result.external_id == "ext-2"
+    assert result.component == "comp-1"
     await client.aclose()
 
 

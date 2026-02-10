@@ -79,6 +79,7 @@ RESOURCE_JSON = {
     "component": None,
     "resource_owner": None,
     "current_revision": "rev-1",
+    "external_id": None,
 }
 
 COMPONENT_JSON = {
@@ -926,6 +927,190 @@ def test_create_resource_supports_component_param():
     assert result.key == "resource-1"
     assert "component=comp-1" in captured["url"]
     assert captured["body"]["data"]["title"] == "Hello"
+
+
+def test_create_resource_with_external_id():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-1"}
+        return httpx.Response(201, json=resource_json)
+
+    client = build_management_client(handler)
+    result = client.create_resource(
+        "folder-1", {"data": {"title": "Hello"}}, external_id="ext-1"
+    )
+    assert result.key == "resource-1"
+    assert result.external_id == "ext-1"
+    assert captured["body"]["external_id"] == "ext-1"
+    assert captured["body"]["data"]["title"] == "Hello"
+    # external_id goes in the body, not in query params
+    assert "external_id=" not in captured["url"]
+
+
+def test_create_resource_with_component_and_external_id():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-1", "component": "comp-1"}
+        return httpx.Response(201, json=resource_json)
+
+    client = build_management_client(handler)
+    result = client.create_resource(
+        "folder-1",
+        {"data": {"title": "Hello"}},
+        component="comp-1",
+        external_id="ext-1",
+    )
+    assert result.key == "resource-1"
+    assert "component=comp-1" in captured["url"]
+    assert captured["body"]["external_id"] == "ext-1"
+
+
+def test_upsert_resource_sends_put_with_external_id():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode())
+        resource_json = {**RESOURCE_JSON, "external_id": "my-ext-id"}
+        return httpx.Response(200, json=resource_json)
+
+    client = build_management_client(handler)
+    result = client.upsert_resource(
+        "folder-1",
+        {"data": {"title": "Upserted"}},
+        external_id="my-ext-id",
+    )
+    assert captured["method"] == "PUT"
+    assert captured["url"].endswith("/resources/?external_id=my-ext-id")
+    assert captured["body"]["data"]["title"] == "Upserted"
+    assert result.key == "resource-1"
+    assert result.external_id == "my-ext-id"
+
+
+def test_upsert_resource_with_component():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["method"] = request.method
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-2", "component": "comp-1"}
+        return httpx.Response(201, json=resource_json)
+
+    client = build_management_client(handler)
+    result = client.upsert_resource(
+        "folder-1",
+        {"data": {"title": "New"}},
+        external_id="ext-2",
+        component="comp-1",
+    )
+    assert captured["method"] == "PUT"
+    assert "external_id=ext-2" in captured["url"]
+    assert "component=comp-1" in captured["url"]
+    assert result.external_id == "ext-2"
+    assert result.component == "comp-1"
+
+
+def test_create_resource_without_external_id_omits_field_from_body():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_management_client(handler)
+    client.create_resource("folder-1", {"data": {"title": "Hello"}})
+    assert "external_id" not in captured["body"]
+
+
+def test_create_resource_does_not_mutate_original_payload():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json=RESOURCE_JSON)
+
+    client = build_management_client(handler)
+    original = {"data": {"title": "Hello"}}
+    client.create_resource("folder-1", original, external_id="ext-1")
+    # original dict must not be modified
+    assert "external_id" not in original
+
+
+def test_create_resource_kwarg_overrides_payload_external_id():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        resource_json = {**RESOURCE_JSON, "external_id": "from-kwarg"}
+        return httpx.Response(201, json=resource_json)
+
+    client = build_management_client(handler)
+    result = client.create_resource(
+        "folder-1",
+        {"data": {"title": "Hello"}, "external_id": "from-body"},
+        external_id="from-kwarg",
+    )
+    assert captured["body"]["external_id"] == "from-kwarg"
+    assert result.external_id == "from-kwarg"
+
+
+def test_upsert_resource_does_not_put_external_id_in_body():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        captured["url"] = str(request.url)
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-1"}
+        return httpx.Response(200, json=resource_json)
+
+    client = build_management_client(handler)
+    client.upsert_resource(
+        "folder-1",
+        {"data": {"title": "Hello"}},
+        external_id="ext-1",
+    )
+    # upsert sends external_id as query param, not in body
+    assert "external_id" not in captured["body"]
+    assert "external_id=ext-1" in captured["url"]
+
+
+def test_upsert_resource_accepts_folder_object():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        resource_json = {**RESOURCE_JSON, "external_id": "ext-1"}
+        return httpx.Response(200, json=resource_json)
+
+    client = build_management_client(handler)
+    folder = FolderSummary.model_validate(FOLDER_JSON)
+    result = client.upsert_resource(
+        folder,
+        {"data": {"title": "Via object"}},
+        external_id="ext-1",
+    )
+    assert "folder-1" in captured["url"]
+    assert result.external_id == "ext-1"
+
+
+def test_resource_summary_parses_external_id():
+    resource_with_ext = {**RESOURCE_JSON, "external_id": "my-ext"}
+    summary = ResourceSummary.model_validate(resource_with_ext)
+    assert summary.external_id == "my-ext"
+
+    summary_without = ResourceSummary.model_validate(RESOURCE_JSON)
+    assert summary_without.external_id is None
+
+
+def test_resource_summary_parses_without_external_id_field():
+    """Backward compatibility: API responses without external_id field parse OK."""
+    raw = {k: v for k, v in RESOURCE_JSON.items() if k != "external_id"}
+    summary = ResourceSummary.model_validate(raw)
+    assert summary.external_id is None
 
 
 def test_publish_revision_uses_nested_path():

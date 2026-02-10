@@ -426,6 +426,58 @@ class OrganizationUsage(BaseModel):
     current_usage: CurrentUsage
 
 
+# ---------------------------------------------------------------------------
+# Batch upsert helpers
+# ---------------------------------------------------------------------------
+
+
+class BatchUpsertItem(BaseModel):
+    """A single item to upsert in a batch operation."""
+
+    external_id: str
+    payload: dict[str, Any]
+    component: str | None = None
+
+
+class BatchItemError(BaseModel):
+    """Error information for a single failed upsert in a batch."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    index: int
+    external_id: str
+    exception: Exception
+
+
+class BatchUpsertResult(BaseModel):
+    """Aggregate result of a batch upsert operation."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    succeeded: list[ResourceSummary] = []
+    failed: list[BatchItemError] = []
+
+    @property
+    def total(self) -> int:
+        """Total number of processed items."""
+        return len(self.succeeded) + len(self.failed)
+
+    @property
+    def success_count(self) -> int:
+        """Number of items that succeeded."""
+        return len(self.succeeded)
+
+    @property
+    def failure_count(self) -> int:
+        """Number of items that failed."""
+        return len(self.failed)
+
+    @property
+    def has_failures(self) -> bool:
+        """Whether any items failed."""
+        return len(self.failed) > 0
+
+
 __all__ = [
     "PaginatedResponse",
     "ResourceSummary",
@@ -465,4 +517,7 @@ __all__ = [
     "PlanDetails",
     "OrganizationPlanStatus",
     "OrganizationUsage",
+    "BatchUpsertItem",
+    "BatchItemError",
+    "BatchUpsertResult",
 ]

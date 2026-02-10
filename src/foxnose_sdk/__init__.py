@@ -38,6 +38,9 @@ from .management.client import (
     SchemaVersionRef,
 )
 from .management.models import (
+    BatchItemError,
+    BatchUpsertItem,
+    BatchUpsertResult,
     ComponentList,
     ComponentSummary,
     EnvironmentList,
@@ -100,6 +103,9 @@ __all__ = [
     "ResourceList",
     "RevisionSummary",
     "RevisionList",
+    "BatchUpsertItem",
+    "BatchItemError",
+    "BatchUpsertResult",
     "FolderSummary",
     "FolderList",
     "ComponentSummary",

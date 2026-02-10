@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`upsert_resource()`** method on `ManagementClient` and `AsyncManagementClient` — create or update a resource by `external_id` in a single call. Uses `PUT /folders/:folder/resources/?external_id=<value>`.
+- **`batch_upsert_resources()`** method on `ManagementClient` and `AsyncManagementClient` — upsert multiple resources concurrently with configurable `max_concurrency`, `fail_fast` error handling mode, and optional `on_progress` callback.
+- **`BatchUpsertItem`**, **`BatchItemError`**, **`BatchUpsertResult`** models for batch upsert input/output.
 - **`external_id`** optional parameter on `create_resource()` — assign an external identifier when creating a resource via `POST`.
 - **`external_id`** field on `ResourceSummary` model — populated in API responses for resources that have an external identifier.
 

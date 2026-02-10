@@ -213,6 +213,82 @@ resource = client.upsert_resource(
 | `external_id` | `str` | Yes | External identifier for the resource |
 | `component` | `ComponentRef` | No | Component key for composite folders |
 
+### Batch Upsert Resources
+
+Upsert many resources in parallel. The SDK fans out individual `upsert_resource()` calls using threads (sync client) or async tasks (async client), controlled by `max_concurrency`.
+
+```python
+from foxnose_sdk import BatchUpsertItem
+
+items = [
+    BatchUpsertItem(external_id="ext-1", payload={"title": "Article 1"}),
+    BatchUpsertItem(external_id="ext-2", payload={"title": "Article 2"}),
+    BatchUpsertItem(external_id="ext-3", payload={"title": "Article 3"}),
+]
+
+result = client.batch_upsert_resources("folder-key", items, max_concurrency=10)
+
+print(f"Succeeded: {result.success_count}, Failed: {result.failure_count}")
+for error in result.failed:
+    print(f"  [{error.index}] {error.external_id}: {error.exception}")
+```
+
+Async usage:
+
+```python
+result = await client.batch_upsert_resources("folder-key", items, max_concurrency=10)
+```
+
+**Error handling modes:**
+
+- `fail_fast=False` (default) — process all items, collect successes and failures in the result.
+- `fail_fast=True` — stop on the first error and raise it immediately.
+
+```python
+# Raises FoxnoseAPIError on first failure
+try:
+    result = client.batch_upsert_resources("folder-key", items, fail_fast=True)
+except FoxnoseAPIError as exc:
+    print(f"Batch stopped: {exc}")
+```
+
+**Progress tracking:**
+
+```python
+result = client.batch_upsert_resources(
+    "folder-key",
+    items,
+    on_progress=lambda done, total: print(f"{done}/{total}"),
+)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `folder_key` | `FolderRef` | Yes | Target folder key or object |
+| `items` | `Sequence[BatchUpsertItem]` | Yes | Items to upsert |
+| `max_concurrency` | `int` | No | Max parallel workers (default 5) |
+| `fail_fast` | `bool` | No | Stop on first error (default `False`) |
+| `on_progress` | `Callable[[int, int], None]` | No | Progress callback `(completed, total)` |
+
+**`BatchUpsertItem` fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `external_id` | `str` | Yes | External identifier for the resource |
+| `payload` | `dict` | Yes | JSON payload matching the folder schema |
+| `component` | `str` | No | Component key for composite folders |
+
+**`BatchUpsertResult` attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `succeeded` | `list[ResourceSummary]` | Successfully upserted resources |
+| `failed` | `list[BatchItemError]` | Failed items with error details |
+| `success_count` | `int` | Number of successes |
+| `failure_count` | `int` | Number of failures |
+| `total` | `int` | Total processed items |
+| `has_failures` | `bool` | Whether any items failed |
+
 ### Update Resource
 
 ```python

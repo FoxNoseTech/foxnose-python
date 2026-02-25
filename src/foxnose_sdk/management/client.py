@@ -537,6 +537,10 @@ class ManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
     ) -> APIFolderSummary:
         """Add a folder to an API.
 
@@ -544,12 +548,24 @@ class ManagementClient(_ManagementPathsMixin):
             api_key: Unique identifier of the API.
             folder_key: Unique identifier of the folder to add.
             allowed_methods: HTTP methods allowed for this folder (e.g., ["GET", "POST"]).
+            description_get_one: Optional short description for the get-one route.
+            description_get_many: Optional short description for the list route.
+            description_search: Optional short description for the search route.
+            description_schema: Optional short description for the schema route.
         """
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {"folder": folder_key}
-        if allowed_methods:
+        if allowed_methods is not None:
             payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
         data = self.request(
             "POST", f"{self._api_folders_root(api_key)}/", json_body=payload
         )
@@ -575,6 +591,10 @@ class ManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
     ) -> APIFolderSummary:
         """Update a folder's configuration within an API.
 
@@ -582,12 +602,24 @@ class ManagementClient(_ManagementPathsMixin):
             api_key: Unique identifier of the API.
             folder_key: Unique identifier of the folder.
             allowed_methods: HTTP methods allowed for this folder.
+            description_get_one: Optional short description for the get-one route.
+            description_get_many: Optional short description for the list route.
+            description_search: Optional short description for the search route.
+            description_schema: Optional short description for the schema route.
         """
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {}
         if allowed_methods is not None:
             payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
         data = self.request(
             "PUT", f"{self._api_folders_root(api_key)}/{folder_key}/", json_body=payload
         )
@@ -2428,12 +2460,24 @@ class AsyncManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
     ) -> APIFolderSummary:
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {"folder": folder_key}
-        if allowed_methods:
+        if allowed_methods is not None:
             payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
         data = await self.request(
             "POST", f"{self._api_folders_root(api_key)}/", json_body=payload
         )
@@ -2455,12 +2499,24 @@ class AsyncManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         *,
         allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
     ) -> APIFolderSummary:
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {}
         if allowed_methods is not None:
             payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
         data = await self.request(
             "PUT", f"{self._api_folders_root(api_key)}/{folder_key}/", json_body=payload
         )

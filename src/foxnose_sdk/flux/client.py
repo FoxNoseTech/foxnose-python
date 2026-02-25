@@ -83,6 +83,16 @@ class FluxClient:
         path = self._build_path(folder_path, suffix="/_search")
         return self._transport.request("POST", path, json_body=body)
 
+    def get_router(self) -> Any:
+        """Return available routes and contracts under the configured API prefix."""
+        path = f"/{self.api_prefix}/_router"
+        return self._transport.request("GET", path)
+
+    def get_schema(self, folder_path: str) -> Any:
+        """Return live JSON Schema and metadata for the given folder path."""
+        path = self._build_path(folder_path, suffix="/_schema")
+        return self._transport.request("GET", path)
+
     def close(self) -> None:
         self._transport.close()
 
@@ -152,6 +162,16 @@ class AsyncFluxClient:
     ) -> Any:
         path = self._build_path(folder_path, suffix="/_search")
         return await self._transport.arequest("POST", path, json_body=body)
+
+    async def get_router(self) -> Any:
+        """Return available routes and contracts under the configured API prefix."""
+        path = f"/{self.api_prefix}/_router"
+        return await self._transport.arequest("GET", path)
+
+    async def get_schema(self, folder_path: str) -> Any:
+        """Return live JSON Schema and metadata for the given folder path."""
+        path = self._build_path(folder_path, suffix="/_schema")
+        return await self._transport.arequest("GET", path)
 
     async def aclose(self) -> None:
         await self._transport.aclose()

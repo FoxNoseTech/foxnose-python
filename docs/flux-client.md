@@ -89,6 +89,34 @@ for item in results["results"]:
     print(item["data"]["title"])
 ```
 
+## Introspection Endpoints
+
+Use Flux introspection to discover available routes and live schema metadata at runtime.
+
+### Router Introspection
+
+```python
+router = client.get_router()
+print(router["api"])
+print(f"Discovered routes: {len(router['routes'])}")
+```
+
+### Schema Introspection
+
+```python
+schema = client.get_schema("blog-posts")
+print(schema["path"])
+print(schema["searchable_fields"])
+print(schema["json_schema"]["type"])
+```
+
+Async usage:
+
+```python
+router = await client.get_router()
+schema = await client.get_schema("blog-posts")
+```
+
 ## Query Parameters
 
 ### Filtering

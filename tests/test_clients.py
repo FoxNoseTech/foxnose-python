@@ -298,6 +298,17 @@ FLUX_PERMISSION_OBJECT_JSON = {
     "object_key": "api-1",
 }
 
+API_FOLDER_JSON = {
+    "folder": "folder-1",
+    "api": "api-1",
+    "allowed_methods": ["get_many", "get_one"],
+    "description_get_one": "Get one article",
+    "description_get_many": "List articles",
+    "description_search": "Search articles",
+    "description_schema": "Read schema",
+    "created_at": "2024-01-10T00:00:00Z",
+}
+
 LOCALE_JSON = {
     "name": "Français",
     "code": "fr",
@@ -1276,11 +1287,89 @@ def test_folder_version_and_field_management():
     assert "/folders/folder-1/model/versions/ver-1/schema/tree/" in captured[1]
 
 
+def test_add_api_folder_supports_route_descriptions():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            201,
+            json=API_FOLDER_JSON | captured["body"],
+        )
+
+    client = build_management_client(handler)
+    added = client.add_api_folder(
+        "api-1",
+        "folder-1",
+        allowed_methods=[],
+        description_get_one="Get one article",
+        description_get_many="List articles",
+        description_search="Search articles",
+        description_schema="",
+    )
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/v1/env123/api/api-1/folders/"
+    assert captured["body"]["folder"] == "folder-1"
+    assert captured["body"]["allowed_methods"] == []
+    assert captured["body"]["description_schema"] == ""
+    assert added.description_get_one == "Get one article"
+    assert added.description_get_many == "List articles"
+    assert added.description_search == "Search articles"
+    assert added.description_schema == ""
+
+
+def test_update_api_folder_supports_route_descriptions():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json=API_FOLDER_JSON | captured["body"],
+        )
+
+    client = build_management_client(handler)
+    updated = client.update_api_folder(
+        "api-1",
+        "folder-1",
+        allowed_methods=["get_many"],
+        description_get_one="",
+        description_get_many="Public feed",
+        description_search="Search public feed",
+        description_schema="Read feed schema",
+    )
+    assert captured["method"] == "PUT"
+    assert captured["path"] == "/v1/env123/api/api-1/folders/folder-1/"
+    assert captured["body"]["allowed_methods"] == ["get_many"]
+    assert captured["body"]["description_get_one"] == ""
+    assert updated.description_get_one == ""
+    assert updated.description_get_many == "Public feed"
+    assert updated.description_search == "Search public feed"
+    assert updated.description_schema == "Read feed schema"
+
+
 def test_flux_client_builds_paths_correctly():
-    captured = {}
+    captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured.setdefault("paths", []).append(request.url.path)
+        if request.url.path.endswith("/_router"):
+            return httpx.Response(200, json={"api": "blog", "routes": []})
+        if request.url.path.endswith("/_schema"):
+            return httpx.Response(
+                200,
+                json={
+                    "json_schema": {"type": "object"},
+                    "searchable_fields": ["title"],
+                    "non_searchable_fields": [],
+                    "path": "/blog/articles",
+                    "actions": ["get_many", "get_one"],
+                },
+            )
         return httpx.Response(200, json={"results": []})
 
     flux = FluxClient(
@@ -1297,7 +1386,16 @@ def test_flux_client_builds_paths_correctly():
     )
     flux.list_resources("articles")
     flux.search("articles", body={"where": {"$": {"all_of": []}}})
-    assert captured["paths"] == ["/blog/articles", "/blog/articles/_search"]
+    router = flux.get_router()
+    schema = flux.get_schema("articles")
+    assert router["api"] == "blog"
+    assert schema["path"] == "/blog/articles"
+    assert captured["paths"] == [
+        "/blog/articles",
+        "/blog/articles/_search",
+        "/blog/_router",
+        "/blog/articles/_schema",
+    ]
 
 
 # ---------------------------------------------------------------------------

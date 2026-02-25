@@ -85,6 +85,35 @@ def publish_all(client, folder: FolderRef):
         # ...
 ```
 
+## API Folder Route Descriptions
+
+When connecting a folder to a Flux API, you can configure per-route descriptions used by Flux `/_router` introspection.
+
+```python
+connection = client.add_api_folder(
+    api_key="api-key",
+    folder_key="folder-key",
+    allowed_methods=["get_many", "get_one"],
+    description_get_one="Get one article by key",
+    description_get_many="List published articles",
+    description_search="Search published articles",
+    description_schema="Read article schema",
+)
+
+print(connection.description_schema)
+```
+
+To update descriptions later:
+
+```python
+updated = client.update_api_folder(
+    "api-key",
+    "folder-key",
+    description_get_many="Public article feed",
+    description_search="Search feed items",
+)
+```
+
 ## Folder Operations
 
 ### List Folders

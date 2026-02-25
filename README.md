@@ -16,6 +16,7 @@ This is the official Python SDK for FoxNose Management and Flux APIs.
 - **Sync and async** - Both synchronous and asynchronous clients
 - **Automatic retries** - Configurable retry with exponential backoff
 - **JWT authentication** - Built-in token refresh support
+- **Flux introspection** - Discover routes and live schema via `/_router` and `/_schema`
 
 ## Documentation
 

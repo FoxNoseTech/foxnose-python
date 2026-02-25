@@ -322,6 +322,17 @@ FIELD_JSON = {
     "vectorizable": False,
 }
 
+API_FOLDER_JSON = {
+    "folder": "folder-1",
+    "api": "api-1",
+    "allowed_methods": ["get_many", "get_one"],
+    "description_get_one": "Get one article",
+    "description_get_many": "List articles",
+    "description_search": "Search articles",
+    "description_schema": "Read schema",
+    "created_at": "2024-01-10T00:00:00Z",
+}
+
 
 def build_async_management_client(
     handler: Callable[[httpx.Request], httpx.Response],
@@ -1654,6 +1665,69 @@ async def test_async_list_environments_handles_array():
     await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_async_add_api_folder_supports_route_descriptions():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+    added = await client.add_api_folder(
+        "api-1",
+        "folder-1",
+        allowed_methods=[],
+        description_get_one="Get one article",
+        description_get_many="List articles",
+        description_search="Search articles",
+        description_schema="",
+    )
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/v1/env123/api/api-1/folders/"
+    assert captured["body"]["folder"] == "folder-1"
+    assert captured["body"]["allowed_methods"] == []
+    assert captured["body"]["description_schema"] == ""
+    assert added.description_get_one == "Get one article"
+    assert added.description_get_many == "List articles"
+    assert added.description_search == "Search articles"
+    assert added.description_schema == ""
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_update_api_folder_supports_route_descriptions():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+    updated = await client.update_api_folder(
+        "api-1",
+        "folder-1",
+        allowed_methods=["get_many"],
+        description_get_one="",
+        description_get_many="Public feed",
+        description_search="Search public feed",
+        description_schema="Read feed schema",
+    )
+    assert captured["method"] == "PUT"
+    assert captured["path"] == "/v1/env123/api/api-1/folders/folder-1/"
+    assert captured["body"]["allowed_methods"] == ["get_many"]
+    assert captured["body"]["description_get_one"] == ""
+    assert updated.description_get_one == ""
+    assert updated.description_get_many == "Public feed"
+    assert updated.description_search == "Search public feed"
+    assert updated.description_schema == "Read feed schema"
+    await client.aclose()
+
+
 # ---------------------------------------------------------------------------
 # AsyncFluxClient tests
 # ---------------------------------------------------------------------------
@@ -1703,6 +1777,36 @@ async def test_async_flux_search():
     assert result["results"] == []
     assert captured["path"] == "/v1/articles/_search"
     assert captured["body"]["where"]["$"]["all_of"] == []
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_router_and_schema_paths():
+    captured: dict[str, Any] = {"paths": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["paths"].append(request.url.path)
+        if request.url.path.endswith("/_router"):
+            return httpx.Response(200, json={"api": "v1", "routes": []})
+        if request.url.path.endswith("/_schema"):
+            return httpx.Response(
+                200,
+                json={
+                    "json_schema": {"type": "object"},
+                    "searchable_fields": ["title"],
+                    "non_searchable_fields": [],
+                    "path": "/v1/articles",
+                    "actions": ["get_many", "get_one"],
+                },
+            )
+        return httpx.Response(200, json={"results": []})
+
+    client = build_async_flux_client(handler)
+    router = await client.get_router()
+    schema = await client.get_schema("articles")
+    assert router["api"] == "v1"
+    assert schema["path"] == "/v1/articles"
+    assert captured["paths"] == ["/v1/_router", "/v1/articles/_schema"]
     await client.aclose()
 
 

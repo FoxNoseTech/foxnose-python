@@ -5,7 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-02-25
+
+### Added
+
+- **Flux introspection methods** on sync and async clients:
+  - `get_router()` calls `GET /{api_prefix}/_router`
+  - `get_schema(folder_path)` calls `GET /{api_prefix}/{folder_path}/_schema`
+- **API folder route description support** in Management clients:
+  - `add_api_folder()` and `update_api_folder()` now accept:
+    - `description_get_one`
+    - `description_get_many`
+    - `description_search`
+    - `description_schema`
+- **`APIFolderSummary` model fields** for route descriptions:
+  - `description_get_one`
+  - `description_get_many`
+  - `description_search`
+  - `description_schema`
 
 ## [0.3.0] - 2026-02-10
 
@@ -62,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling guide
 - Code examples
 
-[Unreleased]: https://github.com/foxnose/python-sdk/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/foxnose/python-sdk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/foxnose/python-sdk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/foxnose/python-sdk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/foxnose/python-sdk/releases/tag/v0.1.0

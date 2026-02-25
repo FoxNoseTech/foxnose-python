@@ -297,6 +297,10 @@ class APIFolderSummary(BaseModel):
     api: str | None = None
     path: str | None = None
     allowed_methods: list[str] | None = None
+    description_get_one: str | None = None
+    description_get_many: str | None = None
+    description_search: str | None = None
+    description_schema: str | None = None
     created_at: datetime | None = None
 
 

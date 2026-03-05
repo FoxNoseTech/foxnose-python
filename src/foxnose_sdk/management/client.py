@@ -762,7 +762,8 @@ class ManagementClient(_ManagementPathsMixin):
         role_key = _resolve_key(role_key)
         payload = self.request("GET", f"{self._role_permissions_root(role_key)}/")
         return [
-            RolePermission.model_validate(item) for item in _coerce_list_payload(payload)
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
         ]
 
     def upsert_management_role_permission(
@@ -833,10 +834,8 @@ class ManagementClient(_ManagementPathsMixin):
         """
         role_key = _resolve_key(role_key)
         params = {"content_type": content_type}
-        payload = (
-            self.request(
-                "GET", f"{self._role_permission_objects_root(role_key)}/", params=params
-            )
+        payload = self.request(
+            "GET", f"{self._role_permission_objects_root(role_key)}/", params=params
         )
         return [
             RolePermissionObject.model_validate(item)
@@ -946,7 +945,8 @@ class ManagementClient(_ManagementPathsMixin):
         role_key = _resolve_key(role_key)
         payload = self.request("GET", f"{self._flux_role_permissions_root(role_key)}/")
         return [
-            RolePermission.model_validate(item) for item in _coerce_list_payload(payload)
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
         ]
 
     def upsert_flux_role_permission(
@@ -1013,12 +1013,10 @@ class ManagementClient(_ManagementPathsMixin):
             content_type: Content type to filter by.
         """
         role_key = _resolve_key(role_key)
-        payload = (
-            self.request(
-                "GET",
-                f"{self._flux_role_permission_objects_root(role_key)}/",
-                params={"content_type": content_type},
-            )
+        payload = self.request(
+            "GET",
+            f"{self._flux_role_permission_objects_root(role_key)}/",
+            params={"content_type": content_type},
         )
         return [
             RolePermissionObject.model_validate(item)
@@ -2717,7 +2715,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         role_key = _resolve_key(role_key)
         payload = await self.request("GET", f"{self._role_permissions_root(role_key)}/")
         return [
-            RolePermission.model_validate(item) for item in _coerce_list_payload(payload)
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
         ]
 
     async def upsert_management_role_permission(
@@ -2836,9 +2835,12 @@ class AsyncManagementClient(_ManagementPathsMixin):
         self, role_key: FluxRoleRef
     ) -> list[RolePermission]:
         role_key = _resolve_key(role_key)
-        payload = await self.request("GET", f"{self._flux_role_permissions_root(role_key)}/")
+        payload = await self.request(
+            "GET", f"{self._flux_role_permissions_root(role_key)}/"
+        )
         return [
-            RolePermission.model_validate(item) for item in _coerce_list_payload(payload)
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
         ]
 
     async def upsert_flux_role_permission(

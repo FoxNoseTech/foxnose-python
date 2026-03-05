@@ -698,7 +698,15 @@ def test_management_role_permissions_workflow():
         if request.method == "GET" and request.url.path.endswith(
             "/permissions/objects/"
         ):
-            return httpx.Response(200, json=[PERMISSION_OBJECT_JSON])
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [PERMISSION_OBJECT_JSON],
+                },
+            )
         if request.method == "GET" and request.url.path.endswith("/permissions/"):
             return httpx.Response(200, json=[ROLE_PERMISSION_JSON])
         if request.method == "POST" and request.url.path.endswith(
@@ -706,7 +714,7 @@ def test_management_role_permissions_workflow():
         ):
             body = json.loads(request.content.decode())
             bodies.append(body)
-            return httpx.Response(201, json=PERMISSION_OBJECT_JSON | body)
+            return httpx.Response(201)
         if request.method == "POST" and request.url.path.endswith(
             "/permissions/batch/"
         ):
@@ -746,6 +754,7 @@ def test_management_role_permissions_workflow():
     assert objects[0].object_key == "folder-1"
 
     added = client.add_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
+    assert added.content_type == "folder-items"
     assert added.object_key == "folder-1"
 
     client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
@@ -777,7 +786,7 @@ def test_flux_role_crud_and_permissions():
         ):
             body = json.loads(request.content.decode())
             bodies.append(body)
-            return httpx.Response(201, json=FLUX_PERMISSION_OBJECT_JSON | body)
+            return httpx.Response(201)
         if request.method == "POST" and request.url.path.endswith(
             "/permissions/batch/"
         ):
@@ -793,7 +802,15 @@ def test_flux_role_crud_and_permissions():
         if request.method == "GET" and request.url.path.endswith(
             "/permissions/objects/"
         ):
-            return httpx.Response(200, json=[FLUX_PERMISSION_OBJECT_JSON])
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [FLUX_PERMISSION_OBJECT_JSON],
+                },
+            )
         if request.method == "GET" and request.url.path.endswith("/permissions/"):
             return httpx.Response(200, json=[FLUX_ROLE_PERMISSION_JSON])
         if request.method == "GET":
@@ -842,10 +859,16 @@ def test_flux_role_crud_and_permissions():
         "flux-role-1", content_type="flux-apis"
     )
     assert objects[0].object_key == "api-1"
+    assert any(
+        "/permissions/flux-api/roles/flux-role-1/permissions/objects/" in url
+        and "content_type=flux-apis" in url
+        for url in captured
+    )
 
     added = client.add_flux_permission_object(
         "flux-role-1", FLUX_PERMISSION_OBJECT_JSON
     )
+    assert added.content_type == "flux-apis"
     assert added.object_key == "api-1"
 
     client.delete_flux_permission_object("flux-role-1", FLUX_PERMISSION_OBJECT_JSON)

@@ -11,7 +11,12 @@ from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import FluxClient
 from foxnose_sdk.http import HttpTransport
-from foxnose_sdk.management.client import ManagementClient, _resolve_key
+from foxnose_sdk.management.client import (
+    ManagementClient,
+    _coerce_list_payload,
+    _coerce_permission_object_payload,
+    _resolve_key,
+)
 from foxnose_sdk.errors import FoxnoseAPIError
 from foxnose_sdk.management.models import (
     BatchItemError,
@@ -1630,6 +1635,36 @@ def test_resolve_key_raises_for_non_string_key():
 
     with pytest.raises(TypeError, match="'key' to be a string"):
         _resolve_key(BadKey())  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# payload coercion helpers
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_list_payload_handles_none_dict_and_scalar():
+    assert _coerce_list_payload(None) == []
+    assert _coerce_list_payload({"content_type": "flux-apis"}) == [
+        {"content_type": "flux-apis"}
+    ]
+    assert _coerce_list_payload("single-item") == ["single-item"]
+
+
+def test_coerce_permission_object_payload_handles_mapping_and_object_alias():
+    payload = _coerce_permission_object_payload(
+        {"content_type": "flux-apis", "object": "api-1"},
+        {"content_type": "flux-apis", "object_key": "ignored"},
+    )
+    assert payload["content_type"] == "flux-apis"
+    assert payload["object_key"] == "api-1"
+
+
+def test_coerce_permission_object_payload_falls_back_to_request_object():
+    payload = _coerce_permission_object_payload(
+        None,
+        {"content_type": "flux-apis", "object": "api-2"},
+    )
+    assert payload == {"content_type": "flux-apis", "object_key": "api-2"}
 
 
 # ---------------------------------------------------------------------------

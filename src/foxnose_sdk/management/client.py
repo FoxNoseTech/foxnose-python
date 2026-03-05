@@ -70,6 +70,47 @@ def _resolve_key(value: str | BaseModel) -> str:
     return key
 
 
+def _coerce_list_payload(payload: Any) -> list[Any]:
+    """Normalize list-like API payloads.
+
+    Supports both legacy list responses and paginated envelopes that expose
+    list items under ``results``.
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        results = payload.get("results")
+        if isinstance(results, list):
+            return results
+        return [payload]
+    return [payload]
+
+
+def _coerce_permission_object_payload(
+    payload: Any, request_payload: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Normalize permission-object payloads for create operations.
+
+    Some API endpoints return `201 Created` with an empty response body.
+    In that case we reconstruct the object from the original request payload.
+    """
+    if isinstance(payload, Mapping):
+        data = dict(payload)
+        if "object_key" not in data and "object" in data:
+            data["object_key"] = data.pop("object")
+        return data
+
+    object_key = request_payload.get("object_key")
+    if object_key is None:
+        object_key = request_payload.get("object")
+    return {
+        "content_type": request_payload.get("content_type"),
+        "object_key": object_key,
+    }
+
+
 FolderRef = Union[str, FolderSummary]
 ResourceRef = Union[str, ResourceSummary]
 RevisionRef = Union[str, RevisionSummary]
@@ -719,8 +760,11 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
         """
         role_key = _resolve_key(role_key)
-        payload = self.request("GET", f"{self._role_permissions_root(role_key)}/") or []
-        return [RolePermission.model_validate(item) for item in payload]
+        payload = self.request("GET", f"{self._role_permissions_root(role_key)}/")
+        return [
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     def upsert_management_role_permission(
         self,
@@ -790,13 +834,13 @@ class ManagementClient(_ManagementPathsMixin):
         """
         role_key = _resolve_key(role_key)
         params = {"content_type": content_type}
-        payload = (
-            self.request(
-                "GET", f"{self._role_permission_objects_root(role_key)}/", params=params
-            )
-            or []
+        payload = self.request(
+            "GET", f"{self._role_permission_objects_root(role_key)}/", params=params
         )
-        return [RolePermissionObject.model_validate(item) for item in payload]
+        return [
+            RolePermissionObject.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     def add_management_permission_object(
         self,
@@ -815,7 +859,9 @@ class ManagementClient(_ManagementPathsMixin):
             f"{self._role_permission_objects_root(role_key)}/",
             json_body=payload,
         )
-        return RolePermissionObject.model_validate(data)
+        return RolePermissionObject.model_validate(
+            _coerce_permission_object_payload(data, payload)
+        )
 
     def delete_management_permission_object(
         self,
@@ -897,10 +943,11 @@ class ManagementClient(_ManagementPathsMixin):
             role_key: Unique identifier of the role.
         """
         role_key = _resolve_key(role_key)
-        payload = (
-            self.request("GET", f"{self._flux_role_permissions_root(role_key)}/") or []
-        )
-        return [RolePermission.model_validate(item) for item in payload]
+        payload = self.request("GET", f"{self._flux_role_permissions_root(role_key)}/")
+        return [
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     def upsert_flux_role_permission(
         self, role_key: FluxRoleRef, payload: Mapping[str, Any]
@@ -966,15 +1013,15 @@ class ManagementClient(_ManagementPathsMixin):
             content_type: Content type to filter by.
         """
         role_key = _resolve_key(role_key)
-        payload = (
-            self.request(
-                "GET",
-                f"{self._flux_role_permission_objects_root(role_key)}/",
-                params={"content_type": content_type},
-            )
-            or []
+        payload = self.request(
+            "GET",
+            f"{self._flux_role_permission_objects_root(role_key)}/",
+            params={"content_type": content_type},
         )
-        return [RolePermissionObject.model_validate(item) for item in payload]
+        return [
+            RolePermissionObject.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     def add_flux_permission_object(
         self, role_key: FluxRoleRef, payload: Mapping[str, Any]
@@ -991,7 +1038,9 @@ class ManagementClient(_ManagementPathsMixin):
             f"{self._flux_role_permission_objects_root(role_key)}/",
             json_body=payload,
         )
-        return RolePermissionObject.model_validate(data)
+        return RolePermissionObject.model_validate(
+            _coerce_permission_object_payload(data, payload)
+        )
 
     def delete_flux_permission_object(
         self, role_key: FluxRoleRef, payload: Mapping[str, Any]
@@ -2664,10 +2713,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
         self, role_key: ManagementRoleRef
     ) -> list[RolePermission]:
         role_key = _resolve_key(role_key)
-        payload = (
-            await self.request("GET", f"{self._role_permissions_root(role_key)}/") or []
-        )
-        return [RolePermission.model_validate(item) for item in payload]
+        payload = await self.request("GET", f"{self._role_permissions_root(role_key)}/")
+        return [
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     async def upsert_management_role_permission(
         self,
@@ -2716,8 +2766,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
             f"{self._role_permission_objects_root(role_key)}/",
             params={"content_type": content_type},
         )
-        payload = payload or []
-        return [RolePermissionObject.model_validate(item) for item in payload]
+        return [
+            RolePermissionObject.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     async def add_management_permission_object(
         self,
@@ -2730,7 +2782,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
             f"{self._role_permission_objects_root(role_key)}/",
             json_body=payload,
         )
-        return RolePermissionObject.model_validate(data)
+        return RolePermissionObject.model_validate(
+            _coerce_permission_object_payload(data, payload)
+        )
 
     async def delete_management_permission_object(
         self,
@@ -2781,11 +2835,13 @@ class AsyncManagementClient(_ManagementPathsMixin):
         self, role_key: FluxRoleRef
     ) -> list[RolePermission]:
         role_key = _resolve_key(role_key)
-        payload = (
-            await self.request("GET", f"{self._flux_role_permissions_root(role_key)}/")
-            or []
+        payload = await self.request(
+            "GET", f"{self._flux_role_permissions_root(role_key)}/"
         )
-        return [RolePermission.model_validate(item) for item in payload]
+        return [
+            RolePermission.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     async def upsert_flux_role_permission(
         self, role_key: FluxRoleRef, payload: Mapping[str, Any]
@@ -2832,8 +2888,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
             f"{self._flux_role_permission_objects_root(role_key)}/",
             params={"content_type": content_type},
         )
-        payload = payload or []
-        return [RolePermissionObject.model_validate(item) for item in payload]
+        return [
+            RolePermissionObject.model_validate(item)
+            for item in _coerce_list_payload(payload)
+        ]
 
     async def add_flux_permission_object(
         self,
@@ -2846,7 +2904,9 @@ class AsyncManagementClient(_ManagementPathsMixin):
             f"{self._flux_role_permission_objects_root(role_key)}/",
             json_body=payload,
         )
-        return RolePermissionObject.model_validate(data)
+        return RolePermissionObject.model_validate(
+            _coerce_permission_object_payload(data, payload)
+        )
 
     async def delete_flux_permission_object(
         self,

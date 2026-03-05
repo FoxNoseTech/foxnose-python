@@ -246,6 +246,8 @@ resource = client.upsert_resource(
 
 Upsert many resources in parallel. The SDK fans out individual `upsert_resource()` calls using threads (sync client) or async tasks (async client), controlled by `max_concurrency`.
 
+This is an SDK helper, not a separate Management API endpoint. Under the hood it executes concurrent `PUT /v1/:env/folders/:folder/resources/?external_id=<value>` calls.
+
 ```python
 from foxnose_sdk import BatchUpsertItem
 
@@ -274,10 +276,10 @@ result = await client.batch_upsert_resources("folder-key", items, max_concurrenc
 - `fail_fast=True` — stop on the first error and raise it immediately.
 
 ```python
-# Raises FoxnoseAPIError on first failure
+# Raises on first failed upsert call
 try:
     result = client.batch_upsert_resources("folder-key", items, fail_fast=True)
-except FoxnoseAPIError as exc:
+except Exception as exc:
     print(f"Batch stopped: {exc}")
 ```
 
@@ -471,9 +473,23 @@ client.upsert_flux_role_permission(
     {
         "content_type": "flux-apis",
         "actions": ["read"],
-        "all_objects": True,
+        "all_objects": False,
     },
 )
+
+# Scope access to specific Flux APIs
+client.add_flux_permission_object(
+    "role-key",
+    {
+        "content_type": "flux-apis",
+        "object_key": "api-key-1",
+    },
+)
+
+objects = client.list_flux_permission_objects(
+    "role-key", content_type="flux-apis"
+)
+# objects is a list[RolePermissionObject]
 ```
 
 ### API Keys

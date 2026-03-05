@@ -11,7 +11,12 @@ from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import FluxClient
 from foxnose_sdk.http import HttpTransport
-from foxnose_sdk.management.client import ManagementClient, _resolve_key
+from foxnose_sdk.management.client import (
+    ManagementClient,
+    _coerce_list_payload,
+    _coerce_permission_object_payload,
+    _resolve_key,
+)
 from foxnose_sdk.errors import FoxnoseAPIError
 from foxnose_sdk.management.models import (
     BatchItemError,
@@ -698,7 +703,15 @@ def test_management_role_permissions_workflow():
         if request.method == "GET" and request.url.path.endswith(
             "/permissions/objects/"
         ):
-            return httpx.Response(200, json=[PERMISSION_OBJECT_JSON])
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [PERMISSION_OBJECT_JSON],
+                },
+            )
         if request.method == "GET" and request.url.path.endswith("/permissions/"):
             return httpx.Response(200, json=[ROLE_PERMISSION_JSON])
         if request.method == "POST" and request.url.path.endswith(
@@ -706,7 +719,7 @@ def test_management_role_permissions_workflow():
         ):
             body = json.loads(request.content.decode())
             bodies.append(body)
-            return httpx.Response(201, json=PERMISSION_OBJECT_JSON | body)
+            return httpx.Response(201)
         if request.method == "POST" and request.url.path.endswith(
             "/permissions/batch/"
         ):
@@ -746,6 +759,7 @@ def test_management_role_permissions_workflow():
     assert objects[0].object_key == "folder-1"
 
     added = client.add_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
+    assert added.content_type == "folder-items"
     assert added.object_key == "folder-1"
 
     client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
@@ -777,7 +791,7 @@ def test_flux_role_crud_and_permissions():
         ):
             body = json.loads(request.content.decode())
             bodies.append(body)
-            return httpx.Response(201, json=FLUX_PERMISSION_OBJECT_JSON | body)
+            return httpx.Response(201)
         if request.method == "POST" and request.url.path.endswith(
             "/permissions/batch/"
         ):
@@ -793,7 +807,15 @@ def test_flux_role_crud_and_permissions():
         if request.method == "GET" and request.url.path.endswith(
             "/permissions/objects/"
         ):
-            return httpx.Response(200, json=[FLUX_PERMISSION_OBJECT_JSON])
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "next": None,
+                    "previous": None,
+                    "results": [FLUX_PERMISSION_OBJECT_JSON],
+                },
+            )
         if request.method == "GET" and request.url.path.endswith("/permissions/"):
             return httpx.Response(200, json=[FLUX_ROLE_PERMISSION_JSON])
         if request.method == "GET":
@@ -842,10 +864,16 @@ def test_flux_role_crud_and_permissions():
         "flux-role-1", content_type="flux-apis"
     )
     assert objects[0].object_key == "api-1"
+    assert any(
+        "/permissions/flux-api/roles/flux-role-1/permissions/objects/" in url
+        and "content_type=flux-apis" in url
+        for url in captured
+    )
 
     added = client.add_flux_permission_object(
         "flux-role-1", FLUX_PERMISSION_OBJECT_JSON
     )
+    assert added.content_type == "flux-apis"
     assert added.object_key == "api-1"
 
     client.delete_flux_permission_object("flux-role-1", FLUX_PERMISSION_OBJECT_JSON)
@@ -1607,6 +1635,36 @@ def test_resolve_key_raises_for_non_string_key():
 
     with pytest.raises(TypeError, match="'key' to be a string"):
         _resolve_key(BadKey())  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# payload coercion helpers
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_list_payload_handles_none_dict_and_scalar():
+    assert _coerce_list_payload(None) == []
+    assert _coerce_list_payload({"content_type": "flux-apis"}) == [
+        {"content_type": "flux-apis"}
+    ]
+    assert _coerce_list_payload("single-item") == ["single-item"]
+
+
+def test_coerce_permission_object_payload_handles_mapping_and_object_alias():
+    payload = _coerce_permission_object_payload(
+        {"content_type": "flux-apis", "object": "api-1"},
+        {"content_type": "flux-apis", "object_key": "ignored"},
+    )
+    assert payload["content_type"] == "flux-apis"
+    assert payload["object_key"] == "api-1"
+
+
+def test_coerce_permission_object_payload_falls_back_to_request_object():
+    payload = _coerce_permission_object_payload(
+        None,
+        {"content_type": "flux-apis", "object": "api-2"},
+    )
+    assert payload == {"content_type": "flux-apis", "object_key": "api-2"}
 
 
 # ---------------------------------------------------------------------------

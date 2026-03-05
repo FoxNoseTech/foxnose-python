@@ -4,6 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/foxnose-sdk.svg)](https://pypi.org/project/foxnose-sdk/)
 [![CI](https://github.com/FoxNoseTech/foxnose-python/actions/workflows/ci.yml/badge.svg)](https://github.com/FoxNoseTech/foxnose-python/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/FoxNoseTech/foxnose-python/graph/badge.svg)](https://codecov.io/gh/FoxNoseTech/foxnose-python)
+[![Docs](https://img.shields.io/badge/docs-foxnose--python.readthedocs.io-blue)](https://foxnose-python.readthedocs.io/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 [FoxNose](https://foxnose.net?utm_source=github&utm_medium=repository&utm_campaign=foxnose-python) is a managed knowledge layer for RAG and AI agents — auto-embeddings, hybrid search, and zero ETL pipelines to maintain.

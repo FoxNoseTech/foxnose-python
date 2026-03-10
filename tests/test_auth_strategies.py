@@ -52,33 +52,7 @@ def test_secure_auth_produces_verifiable_signature():
     signature_b64 = headers["Authorization"].split(":", 1)[1]
     signature = base64.b64decode(signature_b64)
     body_hash = hashlib.sha256(body).hexdigest()
-    expected = f"/api/test|{body_hash}|2024-02-20T18:00:00Z".encode("utf-8")
-    public_obj.verify(signature, expected, ec.ECDSA(hashes.SHA256()))
-
-
-def test_secure_auth_ignores_query_params_in_signature():
-    public_key, private_key, public_obj = _generate_keys()
-    fixed_time = dt.datetime(2024, 2, 20, 18, 0, 0, tzinfo=dt.timezone.utc)
-    auth = SecureKeyAuth(
-        public_key=public_key, private_key=private_key, clock=lambda: fixed_time
-    )
-    body = b""
-    request = RequestData(
-        method="GET",
-        url="https://example.com/v1/env/folders/tree/item/?path=benchmark_jobs",
-        path="/v1/env/folders/tree/item/?path=benchmark_jobs",
-        body=body,
-    )
-    headers = auth.build_headers(request)
-
-    signature_b64 = headers["Authorization"].split(":", 1)[1]
-    signature = base64.b64decode(signature_b64)
-    body_hash = hashlib.sha256(body).hexdigest()
-    expected = (
-        f"/v1/env/folders/tree/item/|{body_hash}|2024-02-20T18:00:00Z".encode(
-            "utf-8"
-        )
-    )
+    expected = f"/api/test?foo=bar|{body_hash}|2024-02-20T18:00:00Z".encode("utf-8")
     public_obj.verify(signature, expected, ec.ECDSA(hashes.SHA256()))
 
 

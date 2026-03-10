@@ -51,9 +51,9 @@ class SecureKeyAuth(AuthStrategy):
         timestamp = self._clock().astimezone(dt.timezone.utc).replace(microsecond=0)
         timestamp_str = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
         parsed = urlparse(request.url)
-        # Query parameters are excluded from the signature payload.
-        # Server-side verification signs request.path without querystring.
         path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
         body_hash = hashlib.sha256(body).hexdigest()
         data_to_sign = f"{path}|{body_hash}|{timestamp_str}".encode("utf-8")
         signature = self._private_key.sign(data_to_sign, ec.ECDSA(hashes.SHA256()))

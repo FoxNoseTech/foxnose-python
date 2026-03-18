@@ -4,7 +4,7 @@ This page provides links to complete code examples demonstrating common use case
 
 ## Available Examples
 
-All examples are located in the [`examples/`](https://github.com/foxnose/python-sdk/tree/main/examples) directory.
+All examples are located in the [`examples/`](https://github.com/FoxNoseTech/foxnose-python/tree/main/examples) directory.
 
 ### Basic Usage
 
@@ -266,7 +266,7 @@ results = client.search("blog-posts", body={"find_text": {"query": "python"}})
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/foxnose/python-sdk.git
+git clone https://github.com/FoxNoseTech/foxnose-python.git
 cd python-sdk
 ```
 

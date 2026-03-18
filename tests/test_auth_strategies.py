@@ -74,10 +74,8 @@ def test_secure_auth_ignores_query_params_in_signature():
     signature_b64 = headers["Authorization"].split(":", 1)[1]
     signature = base64.b64decode(signature_b64)
     body_hash = hashlib.sha256(body).hexdigest()
-    expected = (
-        f"/v1/env/folders/tree/item/|{body_hash}|2024-02-20T18:00:00Z".encode(
-            "utf-8"
-        )
+    expected = f"/v1/env/folders/tree/item/|{body_hash}|2024-02-20T18:00:00Z".encode(
+        "utf-8"
     )
     public_obj.verify(signature, expected, ec.ECDSA(hashes.SHA256()))
 

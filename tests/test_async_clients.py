@@ -9,7 +9,6 @@ import pytest
 from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import AsyncFluxClient
-from foxnose_sdk.flux.models import SearchMode
 from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import AsyncManagementClient
 from foxnose_sdk.errors import FoxnoseAPIError
@@ -2050,9 +2049,7 @@ async def test_async_flux_boosted_search_with_custom_vector():
 
 @pytest.mark.asyncio
 async def test_async_flux_boosted_search_rejects_both():
-    flux = _build_async_flux_client(
-        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
-    )
+    flux = _build_async_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
     with pytest.raises(ValueError, match="not both"):
         await flux.boosted_search(
             "articles",
@@ -2066,9 +2063,7 @@ async def test_async_flux_boosted_search_rejects_both():
 
 @pytest.mark.asyncio
 async def test_async_flux_boosted_search_requires_embedding():
-    flux = _build_async_flux_client(
-        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
-    )
+    flux = _build_async_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
     with pytest.raises(ValueError, match="Provide either"):
         await flux.boosted_search(
             "articles",

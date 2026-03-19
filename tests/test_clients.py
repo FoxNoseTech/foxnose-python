@@ -1779,16 +1779,12 @@ def test_vector_field_search_empty_vector():
 
 def test_vector_field_search_nan_in_vector():
     with pytest.raises(ValueError, match="finite"):
-        VectorFieldSearch(
-            field="embedding", query_vector=[1.0, float("nan"), 3.0]
-        )
+        VectorFieldSearch(field="embedding", query_vector=[1.0, float("nan"), 3.0])
 
 
 def test_vector_field_search_inf_in_vector():
     with pytest.raises(ValueError, match="finite"):
-        VectorFieldSearch(
-            field="embedding", query_vector=[float("inf"), 2.0]
-        )
+        VectorFieldSearch(field="embedding", query_vector=[float("inf"), 2.0])
 
 
 def test_vector_field_search_top_k_validation():
@@ -1864,9 +1860,7 @@ def test_search_request_text_mode_rejects_vector_field_search():
     with pytest.raises(ValueError, match="not allowed in text"):
         SearchRequest(
             search_mode=SearchMode.TEXT,
-            vector_field_search=VectorFieldSearch(
-                field="emb", query_vector=[1.0]
-            ),
+            vector_field_search=VectorFieldSearch(field="emb", query_vector=[1.0]),
         )
 
 
@@ -1891,9 +1885,7 @@ def test_search_request_mutual_exclusion():
         SearchRequest(
             search_mode=SearchMode.VECTOR,
             vector_search=VectorSearch(query="hello"),
-            vector_field_search=VectorFieldSearch(
-                field="emb", query_vector=[1.0]
-            ),
+            vector_field_search=VectorFieldSearch(field="emb", query_vector=[1.0]),
         )
 
 
@@ -1925,9 +1917,7 @@ def test_search_request_hybrid_mode_rejects_vector_field_search():
         SearchRequest(
             search_mode=SearchMode.HYBRID,
             find_text={"query": "test"},
-            vector_field_search=VectorFieldSearch(
-                field="emb", query_vector=[1.0]
-            ),
+            vector_field_search=VectorFieldSearch(field="emb", query_vector=[1.0]),
         )
 
 
@@ -2156,9 +2146,7 @@ def test_flux_boosted_search_with_custom_embedding():
 
 
 def test_flux_boosted_search_requires_embedding_params():
-    flux = _build_flux_client(
-        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
-    )
+    flux = _build_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
     with pytest.raises(ValueError, match="Provide either"):
         flux.boosted_search("articles", find_text={"query": "keyword"})
 
@@ -2183,9 +2171,7 @@ def test_flux_vector_search_extra_body():
 
 
 def test_flux_boosted_search_rejects_both_query_and_field():
-    flux = _build_flux_client(
-        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
-    )
+    flux = _build_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
     with pytest.raises(ValueError, match="not both"):
         flux.boosted_search(
             "articles",
@@ -2197,9 +2183,7 @@ def test_flux_boosted_search_rejects_both_query_and_field():
 
 
 def test_flux_extra_body_rejects_conflicting_keys():
-    flux = _build_flux_client(
-        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
-    )
+    flux = _build_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
     with pytest.raises(ValueError, match="conflict with SearchRequest"):
         flux.vector_search(
             "articles",

@@ -1896,3 +1896,177 @@ async def test_async_create_resource_accepts_folder_object():
     assert result.key == "resource-1"
     assert "/folders/folder-1/resources/" in captured["url"]
     await client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Async FluxClient vector search — integration tests
+# ---------------------------------------------------------------------------
+
+SEARCH_RESPONSE = {"results": [], "count": 0, "next": None}
+
+
+def _build_async_flux_client(
+    handler: Callable[..., httpx.Response],
+) -> AsyncFluxClient:
+    client = AsyncFluxClient(
+        base_url="https://env.fxns.io",
+        api_prefix="v1",
+        auth=SimpleKeyAuth("pub", "secret"),
+    )
+    client._transport = HttpTransport(
+        config=FoxnoseConfig(base_url="https://env.fxns.io"),
+        auth=SimpleKeyAuth("pub", "secret"),
+        async_client=httpx.AsyncClient(
+            base_url="https://env.fxns.io",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    return client
+
+
+@pytest.mark.asyncio
+async def test_async_flux_vector_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.vector_search("articles", query="semantic query", top_k=5)
+    assert captured["path"] == "/v1/articles/_search"
+    assert captured["body"]["search_mode"] == "vector"
+    assert captured["body"]["vector_search"]["query"] == "semantic query"
+    assert captured["body"]["vector_search"]["top_k"] == 5
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_vector_field_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.vector_field_search(
+        "articles",
+        field="speaker_embedding",
+        query_vector=[0.1, 0.2, 0.3],
+        similarity_threshold=0.8,
+    )
+    body = captured["body"]
+    assert body["search_mode"] == "vector"
+    assert body["vector_field_search"]["field"] == "speaker_embedding"
+    assert body["vector_field_search"]["query_vector"] == [0.1, 0.2, 0.3]
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_hybrid_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.hybrid_search(
+        "articles",
+        query="semantic query",
+        find_text={"query": "keyword"},
+        vector_weight=0.7,
+        text_weight=0.3,
+    )
+    body = captured["body"]
+    assert body["search_mode"] == "hybrid"
+    assert body["find_text"] == {"query": "keyword"}
+    assert body["hybrid_config"]["vector_weight"] == 0.7
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_boosted_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.boosted_search(
+        "articles",
+        find_text={"query": "keyword"},
+        query="semantic boost",
+        boost_factor=2.0,
+    )
+    body = captured["body"]
+    assert body["search_mode"] == "vector_boosted"
+    assert body["vector_boost_config"]["boost_factor"] == 2.0
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_vector_search_extra_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.vector_search(
+        "articles",
+        query="hello",
+        where={"category": "tech"},
+    )
+    assert captured["body"]["where"] == {"category": "tech"}
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_boosted_search_with_custom_vector():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.boosted_search(
+        "articles",
+        find_text={"query": "keyword"},
+        field="emb",
+        query_vector=[0.1, 0.2],
+    )
+    body = captured["body"]
+    assert body["vector_field_search"]["field"] == "emb"
+    assert "vector_search" not in body
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_boosted_search_rejects_both():
+    flux = _build_async_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
+    with pytest.raises(ValueError, match="not both"):
+        await flux.boosted_search(
+            "articles",
+            find_text={"query": "keyword"},
+            query="auto",
+            field="emb",
+            query_vector=[0.1],
+        )
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_boosted_search_requires_embedding():
+    flux = _build_async_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
+    with pytest.raises(ValueError, match="Provide either"):
+        await flux.boosted_search(
+            "articles",
+            find_text={"query": "keyword"},
+        )
+    await flux.aclose()

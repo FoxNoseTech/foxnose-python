@@ -73,6 +73,7 @@ nav:
       - Authentication: authentication.md
       - Management Client: management-client.md
       - Flux Client: flux-client.md
+      - Vector Search: vector-search.md
       - Error Handling: error-handling.md
   - Examples: examples.md
   - API Reference: api-reference.md

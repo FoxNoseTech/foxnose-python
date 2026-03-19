@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-19
+
+### Added
+
+- **Vector search models** in `foxnose_sdk.flux.models`:
+  - `SearchMode` enum (`text`, `vector`, `vector_boosted`, `hybrid`)
+  - `VectorSearch` — auto-generated embedding search configuration
+  - `VectorFieldSearch` — custom pre-computed embedding search configuration
+  - `VectorBoostConfig` — boost configuration for `vector_boosted` mode
+  - `HybridConfig` — weight configuration for `hybrid` mode
+  - `SearchRequest` — typed search payload with cross-field validation
+- **Convenience methods** on `FluxClient` and `AsyncFluxClient`:
+  - `vector_search()` — semantic search with auto-generated embeddings
+  - `vector_field_search()` — search with custom embedding vectors
+  - `hybrid_search()` — blended text + vector search
+  - `boosted_search()` — keyword search boosted by vector similarity
+- **Vector Search documentation** — dedicated guide covering all search modes
+- All convenience methods support `offset` and `**extra_body` pass-through for additional API parameters (`where`, `sort`, etc.)
+
+### Fixed
+
+- `examples/flux_client.py` search example now uses correct API keys (`find_text` and `results`)
+
 ## [0.4.2] - 2026-03-10
 
 ### Fixed
@@ -99,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling guide
 - Code examples
 
-[Unreleased]: https://github.com/foxnose/python-sdk/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.3.0...v0.4.0

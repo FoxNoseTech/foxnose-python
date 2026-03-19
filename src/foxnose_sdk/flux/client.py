@@ -6,6 +6,28 @@ from typing import Any, Mapping
 from ..auth import AuthStrategy
 from ..config import FoxnoseConfig, RetryConfig
 from ..http import HttpTransport
+from .models import (
+    HybridConfig,
+    SearchMode,
+    SearchRequest,
+    VectorBoostConfig,
+    VectorFieldSearch,
+    VectorSearch,
+)
+
+_SEARCH_REQUEST_FIELDS = frozenset(SearchRequest.model_fields.keys())
+
+
+def _merge_extra(validated: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    """Merge extra_body into the validated payload, rejecting key conflicts."""
+    conflicts = _SEARCH_REQUEST_FIELDS & extra.keys()
+    if conflicts:
+        raise ValueError(
+            f"extra_body keys conflict with SearchRequest fields: "
+            f"{', '.join(sorted(conflicts))}. "
+            f"Use the explicit parameters instead."
+        )
+    return {**validated, **extra}
 
 
 def _clean_prefix(prefix: str) -> str:
@@ -82,6 +104,158 @@ class FluxClient:
     ) -> Any:
         path = self._build_path(folder_path, suffix="/_search")
         return self._transport.request("POST", path, json_body=body)
+
+    def vector_search(
+        self,
+        folder_path: str,
+        *,
+        query: str,
+        fields: list[str] | None = None,
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Semantic search using auto-generated embeddings."""
+        req = SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_search=VectorSearch(
+                query=query,
+                fields=fields,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return self.search(folder_path, body=body)
+
+    def vector_field_search(
+        self,
+        folder_path: str,
+        *,
+        field: str,
+        query_vector: list[float],
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Search using custom pre-computed embeddings."""
+        req = SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_field_search=VectorFieldSearch(
+                field=field,
+                query_vector=query_vector,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return self.search(folder_path, body=body)
+
+    def hybrid_search(
+        self,
+        folder_path: str,
+        *,
+        query: str,
+        find_text: dict[str, Any],
+        fields: list[str] | None = None,
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        vector_weight: float = 0.6,
+        text_weight: float = 0.4,
+        rerank_results: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Blended text + vector search with configurable weights."""
+        req = SearchRequest(
+            search_mode=SearchMode.HYBRID,
+            find_text=find_text,
+            vector_search=VectorSearch(
+                query=query,
+                fields=fields,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            ),
+            hybrid_config=HybridConfig(
+                vector_weight=vector_weight,
+                text_weight=text_weight,
+                rerank_results=rerank_results,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return self.search(folder_path, body=body)
+
+    def boosted_search(
+        self,
+        folder_path: str,
+        *,
+        find_text: dict[str, Any],
+        query: str | None = None,
+        field: str | None = None,
+        query_vector: list[float] | None = None,
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        boost_factor: float = 1.5,
+        boost_similarity_threshold: float | None = None,
+        max_boost_results: int = 20,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Text search with results boosted by vector similarity."""
+        has_auto = query is not None
+        has_custom = field is not None or query_vector is not None
+        if has_auto and has_custom:
+            raise ValueError(
+                "Provide either 'query' for auto-generated embeddings "
+                "or 'field' + 'query_vector' for custom embeddings, not both"
+            )
+        vs: VectorSearch | None = None
+        vfs: VectorFieldSearch | None = None
+        if has_auto:
+            vs = VectorSearch(
+                query=query,  # type: ignore[arg-type]
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            )
+        elif field is not None and query_vector is not None:
+            vfs = VectorFieldSearch(
+                field=field,
+                query_vector=query_vector,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            )
+        else:
+            raise ValueError(
+                "Provide either 'query' for auto-generated embeddings "
+                "or 'field' + 'query_vector' for custom embeddings"
+            )
+        req = SearchRequest(
+            search_mode=SearchMode.VECTOR_BOOSTED,
+            find_text=find_text,
+            vector_search=vs,
+            vector_field_search=vfs,
+            vector_boost_config=VectorBoostConfig(
+                boost_factor=boost_factor,
+                similarity_threshold=boost_similarity_threshold,
+                max_boost_results=max_boost_results,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return self.search(folder_path, body=body)
 
     def get_router(self, *, params: Mapping[str, Any] | None = None) -> Any:
         """Return available routes and contracts under the configured API prefix."""
@@ -164,6 +338,158 @@ class AsyncFluxClient:
     ) -> Any:
         path = self._build_path(folder_path, suffix="/_search")
         return await self._transport.arequest("POST", path, json_body=body)
+
+    async def vector_search(
+        self,
+        folder_path: str,
+        *,
+        query: str,
+        fields: list[str] | None = None,
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Semantic search using auto-generated embeddings."""
+        req = SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_search=VectorSearch(
+                query=query,
+                fields=fields,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return await self.search(folder_path, body=body)
+
+    async def vector_field_search(
+        self,
+        folder_path: str,
+        *,
+        field: str,
+        query_vector: list[float],
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Search using custom pre-computed embeddings."""
+        req = SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_field_search=VectorFieldSearch(
+                field=field,
+                query_vector=query_vector,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return await self.search(folder_path, body=body)
+
+    async def hybrid_search(
+        self,
+        folder_path: str,
+        *,
+        query: str,
+        find_text: dict[str, Any],
+        fields: list[str] | None = None,
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        vector_weight: float = 0.6,
+        text_weight: float = 0.4,
+        rerank_results: bool = True,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Blended text + vector search with configurable weights."""
+        req = SearchRequest(
+            search_mode=SearchMode.HYBRID,
+            find_text=find_text,
+            vector_search=VectorSearch(
+                query=query,
+                fields=fields,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            ),
+            hybrid_config=HybridConfig(
+                vector_weight=vector_weight,
+                text_weight=text_weight,
+                rerank_results=rerank_results,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return await self.search(folder_path, body=body)
+
+    async def boosted_search(
+        self,
+        folder_path: str,
+        *,
+        find_text: dict[str, Any],
+        query: str | None = None,
+        field: str | None = None,
+        query_vector: list[float] | None = None,
+        top_k: int = 10,
+        similarity_threshold: float | None = None,
+        boost_factor: float = 1.5,
+        boost_similarity_threshold: float | None = None,
+        max_boost_results: int = 20,
+        limit: int | None = None,
+        offset: int | None = None,
+        **extra_body: Any,
+    ) -> Any:
+        """Text search with results boosted by vector similarity."""
+        has_auto = query is not None
+        has_custom = field is not None or query_vector is not None
+        if has_auto and has_custom:
+            raise ValueError(
+                "Provide either 'query' for auto-generated embeddings "
+                "or 'field' + 'query_vector' for custom embeddings, not both"
+            )
+        vs: VectorSearch | None = None
+        vfs: VectorFieldSearch | None = None
+        if has_auto:
+            vs = VectorSearch(
+                query=query,  # type: ignore[arg-type]
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            )
+        elif field is not None and query_vector is not None:
+            vfs = VectorFieldSearch(
+                field=field,
+                query_vector=query_vector,
+                top_k=top_k,
+                similarity_threshold=similarity_threshold,
+            )
+        else:
+            raise ValueError(
+                "Provide either 'query' for auto-generated embeddings "
+                "or 'field' + 'query_vector' for custom embeddings"
+            )
+        req = SearchRequest(
+            search_mode=SearchMode.VECTOR_BOOSTED,
+            find_text=find_text,
+            vector_search=vs,
+            vector_field_search=vfs,
+            vector_boost_config=VectorBoostConfig(
+                boost_factor=boost_factor,
+                similarity_threshold=boost_similarity_threshold,
+                max_boost_results=max_boost_results,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
+        return await self.search(folder_path, body=body)
 
     async def get_router(self, *, params: Mapping[str, Any] | None = None) -> Any:
         """Return available routes and contracts under the configured API prefix."""

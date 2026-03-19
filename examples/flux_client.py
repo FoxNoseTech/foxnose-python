@@ -53,11 +53,11 @@ def main():
         search_results = client.search(
             folder_path,
             body={
-                "query": "python",
+                "find_text": {"query": "python"},
                 "limit": 5,
             },
         )
-        print(f"\nSearch results: {len(search_results.get('hits', []))} hits")
+        print(f"\nSearch results: {len(search_results.get('results', []))} results")
 
     except FoxnoseAPIError as e:
         if e.status_code == 404:

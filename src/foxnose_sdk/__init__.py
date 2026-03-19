@@ -1,5 +1,5 @@
 """
-Foxnose Python SDK exposing Management and Flux clients plus shared tooling.
+FoxNose Python SDK exposing Management and Flux clients plus shared tooling.
 """
 
 from .auth import (
@@ -20,6 +20,14 @@ from .errors import (
     FoxnoseTransportError,
 )
 from .flux.client import AsyncFluxClient, FluxClient
+from .flux.models import (
+    HybridConfig,
+    SearchMode,
+    SearchRequest,
+    VectorBoostConfig,
+    VectorFieldSearch,
+    VectorSearch,
+)
 from .management.client import (
     APIRef,
     AsyncManagementClient,
@@ -152,6 +160,12 @@ __all__ = [
     "ManagementAPIKeyRef",
     "FluxAPIKeyRef",
     "APIRef",
+    "SearchMode",
+    "VectorSearch",
+    "VectorFieldSearch",
+    "VectorBoostConfig",
+    "HybridConfig",
+    "SearchRequest",
 ]
 
-__version__ = "0.4.2"
+__version__ = "0.5.0"

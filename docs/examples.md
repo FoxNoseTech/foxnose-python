@@ -261,6 +261,33 @@ print(resource["data"]["title"])
 results = client.search("blog-posts", body={"find_text": {"query": "python"}})
 ```
 
+### Vector Search
+
+**File:** `examples/vector_search.py`
+
+Vector search modes and configuration:
+
+- Semantic search with auto-generated embeddings
+- Custom embedding search
+- Hybrid text + vector search
+- Boosted search with vector similarity
+
+```python
+from foxnose_sdk.flux import FluxClient
+
+# Semantic search
+results = client.vector_search("blog-posts", query="machine learning")
+
+# Hybrid search
+results = client.hybrid_search(
+    "blog-posts",
+    query="ML applications",
+    find_text={"query": "machine learning"},
+    vector_weight=0.7,
+    text_weight=0.3,
+)
+```
+
 ## Running Examples
 
 1. Clone the repository:

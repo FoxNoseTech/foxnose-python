@@ -10,6 +10,14 @@ import pytest
 from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import FluxClient
+from foxnose_sdk.flux.models import (
+    HybridConfig,
+    SearchMode,
+    SearchRequest,
+    VectorBoostConfig,
+    VectorFieldSearch,
+    VectorSearch,
+)
 from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import (
     ManagementClient,
@@ -1723,3 +1731,490 @@ def test_create_resource_accepts_folder_object():
     result = client.create_resource(folder, {"data": {"title": "Hello"}})
     assert result.key == "resource-1"
     assert "/folders/folder-1/resources/" in captured["url"]
+
+
+# ---------------------------------------------------------------------------
+# Vector search models — validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_search_mode_enum_values():
+    assert SearchMode.TEXT.value == "text"
+    assert SearchMode.VECTOR.value == "vector"
+    assert SearchMode.VECTOR_BOOSTED.value == "vector_boosted"
+    assert SearchMode.HYBRID.value == "hybrid"
+    # str subclass
+    assert isinstance(SearchMode.TEXT, str)
+    assert SearchMode.TEXT == "text"
+
+
+def test_vector_search_defaults():
+    vs = VectorSearch(query="hello")
+    assert vs.top_k == 10
+    assert vs.fields is None
+    assert vs.similarity_threshold is None
+
+
+def test_vector_search_top_k_validation():
+    with pytest.raises(ValueError, match="top_k must be >= 1"):
+        VectorSearch(query="hello", top_k=0)
+
+
+def test_vector_search_threshold_validation():
+    with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+        VectorSearch(query="hello", similarity_threshold=1.5)
+    with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+        VectorSearch(query="hello", similarity_threshold=-0.1)
+
+
+def test_vector_search_nan_threshold():
+    with pytest.raises(ValueError, match="finite"):
+        VectorSearch(query="hello", similarity_threshold=float("nan"))
+
+
+def test_vector_field_search_empty_vector():
+    with pytest.raises(ValueError, match="must not be empty"):
+        VectorFieldSearch(field="embedding", query_vector=[])
+
+
+def test_vector_field_search_nan_in_vector():
+    with pytest.raises(ValueError, match="finite"):
+        VectorFieldSearch(
+            field="embedding", query_vector=[1.0, float("nan"), 3.0]
+        )
+
+
+def test_vector_field_search_inf_in_vector():
+    with pytest.raises(ValueError, match="finite"):
+        VectorFieldSearch(
+            field="embedding", query_vector=[float("inf"), 2.0]
+        )
+
+
+def test_vector_field_search_top_k_validation():
+    with pytest.raises(ValueError, match="top_k must be >= 1"):
+        VectorFieldSearch(field="emb", query_vector=[1.0], top_k=0)
+
+
+def test_vector_boost_config_max_boost_results_validation():
+    with pytest.raises(ValueError, match="max_boost_results must be >= 1"):
+        VectorBoostConfig(max_boost_results=0)
+
+
+def test_vector_boost_config_defaults():
+    cfg = VectorBoostConfig()
+    assert cfg.boost_factor == 1.5
+    assert cfg.max_boost_results == 20
+    assert cfg.similarity_threshold is None
+
+
+def test_vector_boost_config_factor_validation():
+    with pytest.raises(ValueError, match="must be > 0"):
+        VectorBoostConfig(boost_factor=0)
+    with pytest.raises(ValueError, match="must be > 0"):
+        VectorBoostConfig(boost_factor=-1)
+
+
+def test_vector_boost_config_nan_factor():
+    with pytest.raises(ValueError, match="finite"):
+        VectorBoostConfig(boost_factor=float("nan"))
+
+
+def test_vector_boost_config_threshold_range():
+    with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+        VectorBoostConfig(similarity_threshold=2.0)
+
+
+def test_hybrid_config_defaults():
+    cfg = HybridConfig()
+    assert cfg.vector_weight == 0.6
+    assert cfg.text_weight == 0.4
+    assert cfg.rerank_results is True
+
+
+def test_hybrid_config_weights_must_sum_to_one():
+    with pytest.raises(ValueError, match="must equal 1.0"):
+        HybridConfig(vector_weight=0.3, text_weight=0.3)
+
+
+def test_hybrid_config_nan_weight():
+    with pytest.raises(ValueError, match="finite"):
+        HybridConfig(vector_weight=float("nan"), text_weight=0.4)
+
+
+def test_hybrid_config_out_of_range_weight():
+    with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+        HybridConfig(vector_weight=1.5, text_weight=-0.5)
+
+
+# ---------------------------------------------------------------------------
+# SearchRequest — cross-field validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_search_request_text_mode_rejects_vector_search():
+    with pytest.raises(ValueError, match="not allowed in text"):
+        SearchRequest(
+            search_mode=SearchMode.TEXT,
+            vector_search=VectorSearch(query="hello"),
+        )
+
+
+def test_search_request_text_mode_rejects_vector_field_search():
+    with pytest.raises(ValueError, match="not allowed in text"):
+        SearchRequest(
+            search_mode=SearchMode.TEXT,
+            vector_field_search=VectorFieldSearch(
+                field="emb", query_vector=[1.0]
+            ),
+        )
+
+
+def test_search_request_text_mode_rejects_boost_config():
+    with pytest.raises(ValueError, match="not allowed in text"):
+        SearchRequest(
+            search_mode=SearchMode.TEXT,
+            vector_boost_config=VectorBoostConfig(),
+        )
+
+
+def test_search_request_text_mode_rejects_hybrid_config():
+    with pytest.raises(ValueError, match="not allowed in text"):
+        SearchRequest(
+            search_mode=SearchMode.TEXT,
+            hybrid_config=HybridConfig(),
+        )
+
+
+def test_search_request_mutual_exclusion():
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_search=VectorSearch(query="hello"),
+            vector_field_search=VectorFieldSearch(
+                field="emb", query_vector=[1.0]
+            ),
+        )
+
+
+def test_search_request_vector_mode_requires_vector_config():
+    with pytest.raises(ValueError, match="requires vector_search"):
+        SearchRequest(search_mode=SearchMode.VECTOR)
+
+
+def test_search_request_vector_mode_rejects_boost_config():
+    with pytest.raises(ValueError, match="not allowed in vector"):
+        SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_search=VectorSearch(query="hello"),
+            vector_boost_config=VectorBoostConfig(),
+        )
+
+
+def test_search_request_vector_mode_rejects_hybrid_config():
+    with pytest.raises(ValueError, match="not allowed in vector"):
+        SearchRequest(
+            search_mode=SearchMode.VECTOR,
+            vector_search=VectorSearch(query="hello"),
+            hybrid_config=HybridConfig(),
+        )
+
+
+def test_search_request_hybrid_mode_rejects_vector_field_search():
+    with pytest.raises(ValueError, match="not allowed in hybrid"):
+        SearchRequest(
+            search_mode=SearchMode.HYBRID,
+            find_text={"query": "test"},
+            vector_field_search=VectorFieldSearch(
+                field="emb", query_vector=[1.0]
+            ),
+        )
+
+
+def test_search_request_hybrid_mode_requires_vector_search():
+    with pytest.raises(ValueError, match="requires vector_search"):
+        SearchRequest(
+            search_mode=SearchMode.HYBRID,
+            find_text={"query": "test"},
+        )
+
+
+def test_search_request_hybrid_mode_requires_text():
+    with pytest.raises(ValueError, match="requires find_text"):
+        SearchRequest(
+            search_mode=SearchMode.HYBRID,
+            vector_search=VectorSearch(query="hello"),
+        )
+
+
+def test_search_request_hybrid_rejects_boost_config():
+    with pytest.raises(ValueError, match="not allowed in hybrid"):
+        SearchRequest(
+            search_mode=SearchMode.HYBRID,
+            find_text={"query": "test"},
+            vector_search=VectorSearch(query="hello"),
+            hybrid_config=HybridConfig(),
+            vector_boost_config=VectorBoostConfig(),
+        )
+
+
+def test_search_request_boosted_mode_requires_text():
+    with pytest.raises(ValueError, match="requires find_text"):
+        SearchRequest(
+            search_mode=SearchMode.VECTOR_BOOSTED,
+            vector_search=VectorSearch(query="hello"),
+            vector_boost_config=VectorBoostConfig(),
+        )
+
+
+def test_search_request_boosted_mode_requires_vector():
+    with pytest.raises(ValueError, match="requires vector_search"):
+        SearchRequest(
+            search_mode=SearchMode.VECTOR_BOOSTED,
+            find_text={"query": "test"},
+            vector_boost_config=VectorBoostConfig(),
+        )
+
+
+def test_search_request_boosted_rejects_hybrid_config():
+    with pytest.raises(ValueError, match="not allowed in vector_boosted"):
+        SearchRequest(
+            search_mode=SearchMode.VECTOR_BOOSTED,
+            find_text={"query": "test"},
+            vector_search=VectorSearch(query="hello"),
+            vector_boost_config=VectorBoostConfig(),
+            hybrid_config=HybridConfig(),
+        )
+
+
+def test_search_request_valid_text_mode():
+    req = SearchRequest(find_text={"query": "test"})
+    assert req.search_mode == SearchMode.TEXT
+
+
+def test_search_request_valid_vector_mode():
+    req = SearchRequest(
+        search_mode=SearchMode.VECTOR,
+        vector_search=VectorSearch(query="hello"),
+    )
+    dumped = req.model_dump(exclude_none=True)
+    assert dumped["search_mode"] == "vector"
+    assert dumped["vector_search"]["query"] == "hello"
+    assert "vector_field_search" not in dumped
+    assert "hybrid_config" not in dumped
+
+
+def test_search_request_valid_hybrid_mode():
+    req = SearchRequest(
+        search_mode=SearchMode.HYBRID,
+        find_text={"query": "test"},
+        vector_search=VectorSearch(query="hello"),
+        hybrid_config=HybridConfig(vector_weight=0.7, text_weight=0.3),
+    )
+    dumped = req.model_dump(exclude_none=True)
+    assert dumped["search_mode"] == "hybrid"
+    assert dumped["hybrid_config"]["vector_weight"] == 0.7
+
+
+def test_search_request_extra_allow_forwards_unknown():
+    req = SearchRequest(
+        find_text={"query": "test"},
+        where={"category": "news"},  # type: ignore[call-arg]
+        sort="-published_at",  # type: ignore[call-arg]
+    )
+    dumped = req.model_dump(exclude_none=True)
+    assert dumped["where"] == {"category": "news"}
+    assert dumped["sort"] == "-published_at"
+
+
+# ---------------------------------------------------------------------------
+# FluxClient vector search — integration tests
+# ---------------------------------------------------------------------------
+
+
+def _build_flux_client(handler: Callable[..., httpx.Response]) -> FluxClient:
+    client = FluxClient(
+        base_url="https://env.fxns.io",
+        api_prefix="v1",
+        auth=SimpleKeyAuth("pub", "secret"),
+    )
+    client._transport = HttpTransport(
+        config=FoxnoseConfig(base_url="https://env.fxns.io"),
+        auth=SimpleKeyAuth("pub", "secret"),
+        sync_client=httpx.Client(
+            base_url="https://env.fxns.io",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+    return client
+
+
+SEARCH_RESPONSE = {"results": [], "count": 0, "next": None}
+
+
+def test_flux_vector_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.vector_search("articles", query="semantic query", top_k=5)
+    assert captured["path"] == "/v1/articles/_search"
+    assert captured["body"]["search_mode"] == "vector"
+    assert captured["body"]["vector_search"]["query"] == "semantic query"
+    assert captured["body"]["vector_search"]["top_k"] == 5
+    assert "vector_field_search" not in captured["body"]
+
+
+def test_flux_vector_field_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.vector_field_search(
+        "articles",
+        field="speaker_embedding",
+        query_vector=[0.1, 0.2, 0.3],
+        similarity_threshold=0.8,
+    )
+    body = captured["body"]
+    assert body["search_mode"] == "vector"
+    assert body["vector_field_search"]["field"] == "speaker_embedding"
+    assert body["vector_field_search"]["query_vector"] == [0.1, 0.2, 0.3]
+    assert body["vector_field_search"]["similarity_threshold"] == 0.8
+
+
+def test_flux_hybrid_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.hybrid_search(
+        "articles",
+        query="semantic query",
+        find_text={"query": "keyword"},
+        vector_weight=0.7,
+        text_weight=0.3,
+    )
+    body = captured["body"]
+    assert body["search_mode"] == "hybrid"
+    assert body["find_text"] == {"query": "keyword"}
+    assert body["vector_search"]["query"] == "semantic query"
+    assert body["hybrid_config"]["vector_weight"] == 0.7
+    assert body["hybrid_config"]["text_weight"] == 0.3
+
+
+def test_flux_boosted_search_sends_correct_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.boosted_search(
+        "articles",
+        find_text={"query": "keyword"},
+        query="semantic boost",
+        boost_factor=2.0,
+        max_boost_results=10,
+    )
+    body = captured["body"]
+    assert body["search_mode"] == "vector_boosted"
+    assert body["find_text"] == {"query": "keyword"}
+    assert body["vector_search"]["query"] == "semantic boost"
+    assert body["vector_boost_config"]["boost_factor"] == 2.0
+    assert body["vector_boost_config"]["max_boost_results"] == 10
+
+
+def test_flux_boosted_search_with_custom_embedding():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.boosted_search(
+        "articles",
+        find_text={"query": "keyword"},
+        field="emb",
+        query_vector=[0.1, 0.2],
+    )
+    body = captured["body"]
+    assert body["vector_field_search"]["field"] == "emb"
+    assert "vector_search" not in body
+
+
+def test_flux_boosted_search_requires_embedding_params():
+    flux = _build_flux_client(
+        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
+    )
+    with pytest.raises(ValueError, match="Provide either"):
+        flux.boosted_search("articles", find_text={"query": "keyword"})
+
+
+def test_flux_vector_search_extra_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.vector_search(
+        "articles",
+        query="hello",
+        where={"category": "tech"},
+        sort="-score",
+    )
+    body = captured["body"]
+    assert body["where"] == {"category": "tech"}
+    assert body["sort"] == "-score"
+
+
+def test_flux_boosted_search_rejects_both_query_and_field():
+    flux = _build_flux_client(
+        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
+    )
+    with pytest.raises(ValueError, match="not both"):
+        flux.boosted_search(
+            "articles",
+            find_text={"query": "keyword"},
+            query="auto query",
+            field="emb",
+            query_vector=[0.1],
+        )
+
+
+def test_flux_extra_body_rejects_conflicting_keys():
+    flux = _build_flux_client(
+        lambda r: httpx.Response(200, json=SEARCH_RESPONSE)
+    )
+    with pytest.raises(ValueError, match="conflict with SearchRequest"):
+        flux.vector_search(
+            "articles",
+            query="hello",
+            search_mode="text",  # conflicts with validated field
+        )
+
+
+def test_flux_search_backward_compatible():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.search("articles", body={"find_text": {"query": "old style"}, "limit": 5})
+    assert captured["body"] == {"find_text": {"query": "old style"}, "limit": 5}

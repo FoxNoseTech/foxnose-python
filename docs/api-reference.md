@@ -34,6 +34,44 @@ Complete API reference for the FoxNose Python SDK.
       heading_level: 3
       members_order: source
 
+## Vector Search Models
+
+::: foxnose_sdk.flux.models.SearchMode
+    options:
+      show_source: false
+      heading_level: 3
+      members: false
+
+::: foxnose_sdk.flux.models.VectorSearch
+    options:
+      show_source: false
+      heading_level: 3
+      members: false
+
+::: foxnose_sdk.flux.models.VectorFieldSearch
+    options:
+      show_source: false
+      heading_level: 3
+      members: false
+
+::: foxnose_sdk.flux.models.VectorBoostConfig
+    options:
+      show_source: false
+      heading_level: 3
+      members: false
+
+::: foxnose_sdk.flux.models.HybridConfig
+    options:
+      show_source: false
+      heading_level: 3
+      members: false
+
+::: foxnose_sdk.flux.models.SearchRequest
+    options:
+      show_source: false
+      heading_level: 3
+      members: false
+
 ## Authentication
 
 ### JWTAuth

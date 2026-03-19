@@ -89,6 +89,49 @@ for item in results["results"]:
     print(item["data"]["title"])
 ```
 
+## Vector Search
+
+The Flux API supports multiple vector search modes. See the [Vector Search guide](vector-search.md) for full documentation.
+
+### Quick Examples
+
+```python
+# Semantic search with auto-generated embeddings
+results = client.vector_search(
+    "blog-posts",
+    query="machine learning in healthcare",
+    top_k=10,
+)
+
+# Search with custom embeddings
+results = client.vector_field_search(
+    "speakers",
+    field="speaker_embedding",
+    query_vector=[0.012, -0.034, 0.056, ...],
+)
+
+# Hybrid text + vector search
+results = client.hybrid_search(
+    "blog-posts",
+    query="ML applications",
+    find_text={"query": "machine learning"},
+    vector_weight=0.7,
+    text_weight=0.3,
+)
+
+# Text search boosted by vector similarity
+results = client.boosted_search(
+    "blog-posts",
+    find_text={"query": "python tutorial"},
+    query="beginner programming guide",
+    boost_factor=1.5,
+)
+```
+
+All vector search methods support `offset`, `limit`, and `**extra_body` for additional parameters like `where` and `sort`.
+
+The raw `search()` method continues to work with plain dicts for backward compatibility.
+
 ## Introspection Endpoints
 
 Use Flux introspection to discover available routes and live schema metadata at runtime.

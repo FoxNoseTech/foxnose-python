@@ -31,6 +31,7 @@ from .flux.models import (
 from .management.client import (
     APIRef,
     AsyncManagementClient,
+    CollectionRef,
     ComponentRef,
     EnvironmentRef,
     FluxAPIKeyRef,
@@ -46,9 +47,13 @@ from .management.client import (
     SchemaVersionRef,
 )
 from .management.models import (
+    APICollectionList,
+    APICollectionSummary,
     BatchItemError,
     BatchUpsertItem,
     BatchUpsertResult,
+    CollectionList,
+    CollectionSummary,
     ComponentList,
     ComponentSummary,
     EnvironmentList,
@@ -116,6 +121,10 @@ __all__ = [
     "BatchUpsertResult",
     "FolderSummary",
     "FolderList",
+    "CollectionSummary",
+    "CollectionList",
+    "APICollectionSummary",
+    "APICollectionList",
     "ComponentSummary",
     "ComponentList",
     "SchemaVersionSummary",
@@ -148,6 +157,7 @@ __all__ = [
     "RolePermissionObject",
     "UserReference",
     "FolderRef",
+    "CollectionRef",
     "ResourceRef",
     "RevisionRef",
     "ComponentRef",
@@ -168,4 +178,4 @@ __all__ = [
     "SearchRequest",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

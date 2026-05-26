@@ -1,4 +1,4 @@
-"""Async parity tests for the Collection method surface (FOX-M0-01).
+"""Async parity tests for the Collection method surface.
 
 Mirrors test_collections_methods.py with async invocation. Ensures every
 canonical method exists and behaves on AsyncManagementClient + every legacy

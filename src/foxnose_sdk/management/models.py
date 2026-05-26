@@ -68,6 +68,10 @@ class FolderSummary(BaseModel):
 
 FolderList = PaginatedResponse[FolderSummary]
 
+# Collection-named aliases (FOX-M0-01) — same model, preferred name in new code.
+CollectionSummary = FolderSummary
+CollectionList = FolderList
+
 
 class ComponentSummary(BaseModel):
     """Metadata describing a reusable component schema."""
@@ -305,6 +309,10 @@ class APIFolderSummary(BaseModel):
 
 
 APIFolderList = PaginatedResponse[APIFolderSummary]
+
+# Collection-named aliases (FOX-M0-01).
+APICollectionSummary = APIFolderSummary
+APICollectionList = APIFolderList
 
 
 class OrganizationOwner(BaseModel):

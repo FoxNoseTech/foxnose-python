@@ -49,13 +49,19 @@ client = ManagementClient(
     auth=JWTAuth.from_static_token("YOUR_ACCESS_TOKEN"),
 )
 
-# List folders
-folders = client.list_folders()
-for folder in folders.results:
-    print(f"{folder.name} ({folder.key})")
+# List collections
+collections = client.list_collections()
+for collection in collections.results:
+    print(f"{collection.name} ({collection.key})")
 
 client.close()
 ```
+
+> **Note (0.6.0):** Folder-named methods (`list_folders`, `create_folder`, `add_api_folder`,
+> `list_folder_versions`, `list_folder_fields`, etc.) remain as deprecated aliases that
+> emit a one-shot `DeprecationWarning` on first use per process. They keep their
+> original wire behaviour (hitting the legacy `/folders/...` URL alias on the server)
+> and will be removed in **1.0**. Prefer the `*_collection*` names in new code.
 
 ### Async Client
 
@@ -69,7 +75,7 @@ async def main():
         auth=JWTAuth.from_static_token("YOUR_ACCESS_TOKEN"),
     )
 
-    folders = await client.list_folders()
+    collections = await client.list_collections()
     await client.aclose()
 ```
 

@@ -48,6 +48,7 @@ from .models import (
     ProjectList,
     ProjectSummary,
     RegionInfo,
+    NestedFieldMeta,
     ResourceList,
     ResourceSummary,
     RevisionList,
@@ -56,6 +57,7 @@ from .models import (
     RolePermissionObject,
     SchemaVersionList,
     SchemaVersionSummary,
+    SyncComponentResponse,
 )
 
 
@@ -117,7 +119,7 @@ def _coerce_permission_object_payload(
 
 
 FolderRef = Union[str, FolderSummary]
-# Collection-named alias (FOX-M0-01) — same union, preferred name in new code.
+# Collection-named alias — same union, preferred name in new code.
 CollectionRef = FolderRef
 ResourceRef = Union[str, ResourceSummary]
 RevisionRef = Union[str, RevisionSummary]
@@ -194,6 +196,9 @@ class _ManagementPathsMixin:
 
     def _collection_schema_tree(self, collection_key: str, version_key: str) -> str:
         return f"{self._collection_versions_base(collection_key)}/{version_key}/schema/tree"
+
+    def _collection_sync_component(self, collection_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/sync_component"
 
     def _api_collections_root(self, api_key: str) -> str:
         return f"{self._api_root(api_key)}/collections"
@@ -2076,6 +2081,78 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return SchemaVersionSummary.model_validate(data)
 
+    def sync_collection_component(
+        self,
+        collection_key: CollectionRef,
+        *,
+        field_paths: Sequence[str] | None = None,
+        to_versions: Mapping[str, str] | None = None,
+    ) -> SyncComponentResponse:
+        """Advance pinned nested fields on a Collection to a target Component version.
+
+        Creates a new published Collection schema version with the
+        affected ``meta.component_version`` pins advanced. ``auto_update=True``
+        fields and fields already at the target version are reported in
+        ``skipped`` rather than advanced.
+
+        Parameters
+        ----------
+        collection_key:
+            The Collection to sync.
+        field_paths:
+            Optional list of nested field paths to advance. When omitted,
+            every pinned (``auto_update=False``) nested field on the
+            Collection's current version is considered.
+        to_versions:
+            Optional per-path override mapping field path → target
+            Component Version UID. Paths not in this mapping advance to
+            the referenced Component's ``current_version``. When both
+            ``field_paths`` and ``to_versions`` are supplied, every key in
+            ``to_versions`` must also appear in ``field_paths``.
+
+        Returns
+        -------
+        SyncComponentResponse
+            Summary of synced and skipped paths, plus the new
+            ``schema_version`` UID (``None`` if no paths were advanced).
+
+        Raises
+        ------
+        ValueError
+            Locally raised before any HTTP request when both ``field_paths``
+            and ``to_versions`` are supplied AND ``to_versions`` contains a
+            key that is not in ``field_paths``. Mirrors the server-side
+            validator so the misuse surfaces at the call-site.
+        FoxnoseAPIError
+            On 409 ``component_sync_conflict`` when the target version
+            would break existing resources, on 422 ``too_many_versions``
+            when the Collection's schema quota is exhausted, on 404 when
+            the Collection or a specified target version is missing, or
+            on 422 ``validation_error`` when the request body is invalid.
+        """
+        collection_key = _resolve_key(collection_key)
+        # Client-side invariant (mirrors server validator): every key in
+        # to_versions must also appear in field_paths when both are supplied.
+        # Catch the misuse locally instead of round-tripping a 422.
+        if field_paths is not None and to_versions:
+            extras = set(to_versions.keys()) - set(field_paths)
+            if extras:
+                raise ValueError(
+                    "to_versions includes paths not present in field_paths: "
+                    f"{sorted(extras)}"
+                )
+        body: dict[str, Any] = {}
+        if field_paths is not None:
+            body["field_paths"] = list(field_paths)
+        if to_versions is not None:
+            body["to_versions"] = dict(to_versions)
+        data = self.request(
+            "POST",
+            f"{self._collection_sync_component(collection_key)}/",
+            json_body=body,
+        )
+        return SyncComponentResponse.model_validate(data)
+
     # ------------------------------------------------------------------ #
     # Folder schema version operations (deprecated)
     # ------------------------------------------------------------------ #
@@ -3824,6 +3901,34 @@ class AsyncManagementClient(_ManagementPathsMixin):
             f"{self._collection_versions_base(collection_key)}/{version_key}/publish/",
         )
         return SchemaVersionSummary.model_validate(data)
+
+    async def sync_collection_component(
+        self,
+        collection_key: CollectionRef,
+        *,
+        field_paths: Sequence[str] | None = None,
+        to_versions: Mapping[str, str] | None = None,
+    ) -> SyncComponentResponse:
+        """Async sibling of :meth:`ManagementClient.sync_collection_component`."""
+        collection_key = _resolve_key(collection_key)
+        if field_paths is not None and to_versions:
+            extras = set(to_versions.keys()) - set(field_paths)
+            if extras:
+                raise ValueError(
+                    "to_versions includes paths not present in field_paths: "
+                    f"{sorted(extras)}"
+                )
+        body: dict[str, Any] = {}
+        if field_paths is not None:
+            body["field_paths"] = list(field_paths)
+        if to_versions is not None:
+            body["to_versions"] = dict(to_versions)
+        data = await self.request(
+            "POST",
+            f"{self._collection_sync_component(collection_key)}/",
+            json_body=body,
+        )
+        return SyncComponentResponse.model_validate(data)
 
     # ------------------------------------------------------------------ #
     # Collection schema field operations (canonical)

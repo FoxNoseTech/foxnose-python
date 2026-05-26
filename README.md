@@ -79,6 +79,65 @@ async def main():
     await client.aclose()
 ```
 
+### Components on Collections
+
+Collections can embed Components as nested fields with explicit pin
+semantics (`component`, `component_version`, `auto_update`). The
+`NestedFieldMeta` helper builds the `meta` block for you, and
+`sync_collection_component` advances pinned fields to a target Component
+version on demand.
+
+```python
+from foxnose_sdk import (
+    ManagementClient,
+    FoxnoseConfig,
+    NestedFieldMeta,
+)
+from foxnose_sdk.auth import JWTAuth
+
+client = ManagementClient(
+    FoxnoseConfig(base_url="https://api.foxnose.com"),
+    environment_key="prod",
+    auth=JWTAuth("ACCESS_TOKEN"),
+)
+
+# Embed a Component as a pinned nested field on a Collection draft.
+client.create_collection_field(
+    "articles",
+    "v2-draft",
+    {
+        "key": "seo",
+        "name": "SEO",
+        "type": "nested",
+        "required": True,
+        "meta": NestedFieldMeta(
+            component="cmp-seo-metadata",
+            component_version="ver-abc12345",
+            auto_update=False,  # default — pin until explicit sync
+        ).to_meta(),
+    },
+)
+
+# Later, advance every pinned nested field to its Component's current
+# version (empty body = sync all pinned).
+result = client.sync_collection_component("articles")
+print(result.synced_paths, result.schema_version)
+
+# Advance specific paths to a chosen Component version.
+result = client.sync_collection_component(
+    "articles",
+    field_paths=["seo"],
+    to_versions={"seo": "ver-def67890"},
+)
+```
+
+`sync_collection_component` returns a `SyncComponentResponse` with
+`synced_paths`, `skipped` (per-path reasons), and `schema_version` (UID
+of the newly published Collection schema version, or `None` if no field
+needed advancing). On compatibility conflict the server returns 409
+`component_sync_conflict`; quota exhaustion returns 422
+`too_many_versions`. Both surface as `FoxnoseAPIError`.
+
 ### Flux Client
 
 ```python

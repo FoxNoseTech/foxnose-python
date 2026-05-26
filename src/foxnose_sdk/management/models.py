@@ -68,7 +68,7 @@ class FolderSummary(BaseModel):
 
 FolderList = PaginatedResponse[FolderSummary]
 
-# Collection-named aliases (FOX-M0-01) — same model, preferred name in new code.
+# Collection-named aliases — same model, preferred name in new code.
 CollectionSummary = FolderSummary
 CollectionList = FolderList
 
@@ -125,6 +125,100 @@ class FieldSummary(BaseModel):
 
 SchemaVersionList = PaginatedResponse[SchemaVersionSummary]
 FieldList = PaginatedResponse[FieldSummary]
+
+
+class NestedFieldMeta(BaseModel):
+    """Helper for building the ``meta`` block of a Collection ``nested`` field.
+
+    A ``nested`` field on a Collection schema embeds a Component schema at
+    a specific published version. The pin is required: even in auto-update
+    mode, ``component_version`` stores the most recently resolved version
+    and acts as a fallback if a future Component publish fails compatibility.
+
+    Use ``.to_meta()`` (or just unpack via ``model_dump()``) when building
+    the ``meta`` payload for :meth:`ManagementClient.create_collection_field`
+    or :meth:`ManagementClient.update_collection_field`.
+
+    Example
+    -------
+    >>> meta = NestedFieldMeta(
+    ...     component="cmp-seo-metadata",
+    ...     component_version="ver-abc12345",
+    ...     auto_update=True,
+    ... )
+    >>> client.create_collection_field(
+    ...     "articles",
+    ...     "v1-draft",
+    ...     {"key": "seo", "name": "SEO", "type": "nested",
+    ...      "required": True, "meta": meta.to_meta()},
+    ... )
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    component: str = Field(min_length=6, max_length=36)
+    component_version: str = Field(min_length=6, max_length=36)
+    auto_update: bool = False
+
+    def to_meta(self) -> dict[str, Any]:
+        """Return the dict shape expected by the schema-tree endpoint."""
+        return self.model_dump()
+
+
+class SyncComponentSkippedItem(BaseModel):
+    """One entry in the ``skipped`` list of a sync_component response.
+
+    Attributes
+    ----------
+    path:
+        The nested field path that was skipped.
+    reason:
+        Why the field was skipped. One of: ``"not_requested"``,
+        ``"auto_update_mode"``, ``"already_at_target"``,
+        ``"component_not_found"``, ``"component_unpublished"``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    path: str
+    reason: str
+
+
+class SyncComponentResponse(BaseModel):
+    """Response payload from ``POST /collections/{key}/sync_component/``.
+
+    Attributes
+    ----------
+    synced_paths:
+        Field paths whose ``meta.component_version`` was advanced. Empty
+        when every requested path was skipped (no new schema version was
+        created in that case and ``schema_version`` is ``None``).
+    skipped:
+        Per-path skip records explaining why each was left alone.
+    schema_version:
+        UID of the newly published Collection schema version that the
+        sync materialized. ``None`` when no advance was needed.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    synced_paths: list[str] = Field(default_factory=list)
+    skipped: list[SyncComponentSkippedItem] = Field(default_factory=list)
+    schema_version: str | None = None
+
+
+class ComponentSyncConflictDetail(BaseModel):
+    """One structured conflict entry inside a 409 ``component_sync_conflict``
+    error detail (e.g. ``{"field_path": "...", "blocking_reason": "..."}``).
+
+    ``blocking_reason`` is one of: ``"required_field_added_no_default"``,
+    ``"type_narrowed"``, ``"field_removed"``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    field_path: str
+    blocking_reason: str
 
 
 class RegionInfo(BaseModel):
@@ -310,7 +404,7 @@ class APIFolderSummary(BaseModel):
 
 APIFolderList = PaginatedResponse[APIFolderSummary]
 
-# Collection-named aliases (FOX-M0-01).
+# Collection-named aliases.
 APICollectionSummary = APIFolderSummary
 APICollectionList = APIFolderList
 

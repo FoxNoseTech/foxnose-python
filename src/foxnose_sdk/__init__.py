@@ -56,6 +56,7 @@ from .management.models import (
     CollectionSummary,
     ComponentList,
     ComponentSummary,
+    ComponentSyncConflictDetail,
     EnvironmentList,
     EnvironmentSummary,
     FieldList,
@@ -72,6 +73,7 @@ from .management.models import (
     FluxRoleSummary,
     LocaleList,
     LocaleSummary,
+    NestedFieldMeta,
     OrganizationList,
     OrganizationOwner,
     OrganizationPlanStatus,
@@ -91,6 +93,8 @@ from .management.models import (
     RevisionSummary,
     SchemaVersionList,
     SchemaVersionSummary,
+    SyncComponentResponse,
+    SyncComponentSkippedItem,
 )
 
 __all__ = [
@@ -127,6 +131,10 @@ __all__ = [
     "APICollectionList",
     "ComponentSummary",
     "ComponentList",
+    "ComponentSyncConflictDetail",
+    "NestedFieldMeta",
+    "SyncComponentResponse",
+    "SyncComponentSkippedItem",
     "SchemaVersionSummary",
     "SchemaVersionList",
     "FieldSummary",

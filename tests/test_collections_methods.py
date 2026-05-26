@@ -1,4 +1,4 @@
-"""Smoke tests for the Collection method surface (FOX-M0-01).
+"""Smoke tests for the Collection method surface.
 
 Covers the canonical Collection methods (list/get/create/update/delete +
 api-association + versions + fields) and the one-shot DeprecationWarning

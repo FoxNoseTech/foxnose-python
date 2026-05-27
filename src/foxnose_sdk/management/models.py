@@ -26,7 +26,6 @@ class ResourceSummary(BaseModel):
     created_at: datetime
     vectors_size: int
     name: str | None = None
-    component: str | None = None
     resource_owner: str | None = None
     current_revision: str | None = None
     external_id: str | None = None
@@ -57,7 +56,6 @@ class FolderSummary(BaseModel):
     key: str
     name: str
     alias: str
-    folder_type: str
     content_type: str
     strict_reference: bool
     created_at: datetime
@@ -540,9 +538,10 @@ class OrganizationUsage(BaseModel):
 class BatchUpsertItem(BaseModel):
     """A single item to upsert in a batch operation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     external_id: str
     payload: dict[str, Any]
-    component: str | None = None
 
 
 class BatchItemError(BaseModel):

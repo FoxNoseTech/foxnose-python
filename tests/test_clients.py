@@ -93,7 +93,6 @@ RESOURCE_JSON = {
     "created_at": "2024-01-10T00:00:00Z",
     "vectors_size": 0,
     "name": None,
-    "component": None,
     "resource_owner": None,
     "current_revision": "rev-1",
     "external_id": None,
@@ -963,23 +962,6 @@ def test_list_resources_returns_model():
     assert captured["path"] == "/v1/env123/folders/folder-1/resources/"
 
 
-def test_create_resource_supports_component_param():
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content.decode())
-        return httpx.Response(201, json=RESOURCE_JSON)
-
-    client = build_management_client(handler)
-    result = client.create_resource(
-        "folder-1", {"data": {"title": "Hello"}}, component="comp-1"
-    )
-    assert result.key == "resource-1"
-    assert "component=comp-1" in captured["url"]
-    assert captured["body"]["data"]["title"] == "Hello"
-
-
 def test_create_resource_with_external_id():
     captured = {}
 
@@ -999,27 +981,6 @@ def test_create_resource_with_external_id():
     assert captured["body"]["data"]["title"] == "Hello"
     # external_id goes in the body, not in query params
     assert "external_id=" not in captured["url"]
-
-
-def test_create_resource_with_component_and_external_id():
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content.decode())
-        resource_json = {**RESOURCE_JSON, "external_id": "ext-1", "component": "comp-1"}
-        return httpx.Response(201, json=resource_json)
-
-    client = build_management_client(handler)
-    result = client.create_resource(
-        "folder-1",
-        {"data": {"title": "Hello"}},
-        component="comp-1",
-        external_id="ext-1",
-    )
-    assert result.key == "resource-1"
-    assert "component=comp-1" in captured["url"]
-    assert captured["body"]["external_id"] == "ext-1"
 
 
 def test_upsert_resource_sends_put_with_external_id():
@@ -1043,29 +1004,6 @@ def test_upsert_resource_sends_put_with_external_id():
     assert captured["body"]["data"]["title"] == "Upserted"
     assert result.key == "resource-1"
     assert result.external_id == "my-ext-id"
-
-
-def test_upsert_resource_with_component():
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["method"] = request.method
-        resource_json = {**RESOURCE_JSON, "external_id": "ext-2", "component": "comp-1"}
-        return httpx.Response(201, json=resource_json)
-
-    client = build_management_client(handler)
-    result = client.upsert_resource(
-        "folder-1",
-        {"data": {"title": "New"}},
-        external_id="ext-2",
-        component="comp-1",
-    )
-    assert captured["method"] == "PUT"
-    assert "external_id=ext-2" in captured["url"]
-    assert "component=comp-1" in captured["url"]
-    assert result.external_id == "ext-2"
-    assert result.component == "comp-1"
 
 
 def test_create_resource_without_external_id_omits_field_from_body():
@@ -1309,26 +1247,6 @@ def test_batch_upsert_resources_progress_callback():
     # Completed counts should cover 1, 2, 3
     completed_values = sorted(done for done, _ in progress_calls)
     assert completed_values == [1, 2, 3]
-
-
-def test_batch_upsert_resources_with_component():
-    captured: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(str(request.url))
-        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
-        return httpx.Response(200, json={**RESOURCE_JSON, "external_id": ext_id})
-
-    client = build_management_client(handler)
-    items = [
-        BatchUpsertItem(
-            external_id="ext-1", payload={"title": "Item"}, component="comp-1"
-        )
-    ]
-    result = client.batch_upsert_resources("folder-1", items)
-    assert result.success_count == 1
-    assert "component=comp-1" in captured[0]
-    assert "external_id=ext-1" in captured[0]
 
 
 def test_batch_upsert_resources_rejects_zero_concurrency():

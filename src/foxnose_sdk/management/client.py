@@ -2462,7 +2462,6 @@ class ManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        component: ComponentRef | None = None,
         external_id: str | None = None,
     ) -> ResourceSummary:
         """
@@ -2470,21 +2469,17 @@ class ManagementClient(_ManagementPathsMixin):
 
         Args:
             folder_key: Target folder key.
-            payload: JSON payload that matches the folder/component schema.
-            component: Optional component key for component-based folders.
+            payload: JSON payload that matches the folder schema.
             external_id: Optional external identifier for the resource.
         """
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
 
-        params = {"component": component} if component else None
         body: dict[str, Any] = dict(payload)
         if external_id is not None:
             body["external_id"] = external_id
         data = self.request(
             "POST",
             f"{self._resource_base(folder_key)}/",
-            params=params,
             json_body=body,
         )
         return ResourceSummary.model_validate(data)
@@ -2495,7 +2490,6 @@ class ManagementClient(_ManagementPathsMixin):
         payload: Mapping[str, Any],
         *,
         external_id: str,
-        component: ComponentRef | None = None,
     ) -> ResourceSummary:
         """
         Create or update a resource by external_id.
@@ -2506,15 +2500,11 @@ class ManagementClient(_ManagementPathsMixin):
 
         Args:
             folder_key: Target folder key.
-            payload: JSON payload matching the folder/component schema.
+            payload: JSON payload matching the folder schema.
             external_id: External identifier for the resource (required).
-            component: Optional component key for component-based folders.
         """
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
         params: dict[str, str] = {"external_id": external_id}
-        if component:
-            params["component"] = component
         data = self.request(
             "PUT",
             f"{self._resource_base(folder_key)}/",
@@ -2571,7 +2561,6 @@ class ManagementClient(_ManagementPathsMixin):
                     folder_key,
                     item.payload,
                     external_id=item.external_id,
-                    component=item.component,
                 ): (idx, item)
                 for idx, item in enumerate(items)
             }
@@ -4415,19 +4404,15 @@ class AsyncManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        component: ComponentRef | None = None,
         external_id: str | None = None,
     ) -> ResourceSummary:
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
-        params = {"component": component} if component else None
         body: dict[str, Any] = dict(payload)
         if external_id is not None:
             body["external_id"] = external_id
         data = await self.request(
             "POST",
             f"{self._resource_base(folder_key)}/",
-            params=params,
             json_body=body,
         )
         return ResourceSummary.model_validate(data)
@@ -4438,7 +4423,6 @@ class AsyncManagementClient(_ManagementPathsMixin):
         payload: Mapping[str, Any],
         *,
         external_id: str,
-        component: ComponentRef | None = None,
     ) -> ResourceSummary:
         """
         Create or update a resource by external_id.
@@ -4449,15 +4433,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
         Args:
             folder_key: Target folder key.
-            payload: JSON payload matching the folder/component schema.
+            payload: JSON payload matching the folder schema.
             external_id: External identifier for the resource (required).
-            component: Optional component key for component-based folders.
         """
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
         params: dict[str, str] = {"external_id": external_id}
-        if component:
-            params["component"] = component
         data = await self.request(
             "PUT",
             f"{self._resource_base(folder_key)}/",
@@ -4517,7 +4497,6 @@ class AsyncManagementClient(_ManagementPathsMixin):
                         folder_key,
                         item.payload,
                         external_id=item.external_id,
-                        component=item.component,
                     )
                     succeeded.append(result)
                 except Exception as exc:

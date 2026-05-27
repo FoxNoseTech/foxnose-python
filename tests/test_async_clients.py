@@ -70,7 +70,6 @@ RESOURCE_JSON = {
     "created_at": "2024-01-10T00:00:00Z",
     "vectors_size": 0,
     "name": None,
-    "component": None,
     "resource_owner": None,
     "current_revision": "rev-1",
     "external_id": None,
@@ -1120,25 +1119,6 @@ async def test_async_flux_role_permissions_workflow():
 
 
 @pytest.mark.asyncio
-async def test_async_create_resource_with_component():
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content.decode())
-        return httpx.Response(201, json=RESOURCE_JSON)
-
-    client = build_async_management_client(handler)
-    result = await client.create_resource(
-        "folder-1", {"data": {"title": "Hello"}}, component="comp-1"
-    )
-    assert result.key == "resource-1"
-    assert "component=comp-1" in captured["url"]
-    assert captured["body"]["data"]["title"] == "Hello"
-    await client.aclose()
-
-
-@pytest.mark.asyncio
 async def test_async_create_resource_with_external_id():
     captured: dict[str, Any] = {}
 
@@ -1211,31 +1191,6 @@ async def test_async_upsert_resource_sends_put_with_external_id():
     assert "external_id" not in captured["body"]
     assert result.key == "resource-1"
     assert result.external_id == "my-ext-id"
-    await client.aclose()
-
-
-@pytest.mark.asyncio
-async def test_async_upsert_resource_with_component():
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["method"] = request.method
-        resource_json = {**RESOURCE_JSON, "external_id": "ext-2", "component": "comp-1"}
-        return httpx.Response(201, json=resource_json)
-
-    client = build_async_management_client(handler)
-    result = await client.upsert_resource(
-        "folder-1",
-        {"data": {"title": "New"}},
-        external_id="ext-2",
-        component="comp-1",
-    )
-    assert captured["method"] == "PUT"
-    assert "external_id=ext-2" in captured["url"]
-    assert "component=comp-1" in captured["url"]
-    assert result.external_id == "ext-2"
-    assert result.component == "comp-1"
     await client.aclose()
 
 
@@ -1377,28 +1332,6 @@ async def test_async_batch_upsert_resources_progress_callback():
     assert all(total == 3 for _, total in progress_calls)
     completed_values = sorted(done for done, _ in progress_calls)
     assert completed_values == [1, 2, 3]
-    await client.aclose()
-
-
-@pytest.mark.asyncio
-async def test_async_batch_upsert_resources_with_component():
-    captured: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(str(request.url))
-        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
-        return httpx.Response(200, json={**RESOURCE_JSON, "external_id": ext_id})
-
-    client = build_async_management_client(handler)
-    items = [
-        BatchUpsertItem(
-            external_id="ext-1", payload={"title": "Item"}, component="comp-1"
-        )
-    ]
-    result = await client.batch_upsert_resources("folder-1", items)
-    assert result.success_count == 1
-    assert "component=comp-1" in captured[0]
-    assert "external_id=ext-1" in captured[0]
     await client.aclose()
 
 

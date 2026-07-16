@@ -129,8 +129,8 @@ def main():
 
     except FoxnoseAPIError as e:
         print(f"API Error: {e.message}")
-        if e.details:
-            print(f"Details: {e.details}")
+        if e.detail:
+            print(f"Details: {e.detail}")
     finally:
         client.close()
 

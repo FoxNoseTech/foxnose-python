@@ -16,7 +16,7 @@ try:
 except FoxnoseAPIError as e:
     print(f"Status: {e.status_code}")
     print(f"Message: {e.message}")
-    print(f"Details: {e.details}")
+    print(f"Details: {e.detail}")
 ```
 
 #### Attributes
@@ -25,7 +25,43 @@ except FoxnoseAPIError as e:
 |-----------|------|-------------|
 | `status_code` | `int` | HTTP status code |
 | `message` | `str` | Error message from the API |
-| `details` | `dict \| None` | Additional error details (if provided) |
+| `error_code` | `str \| None` | Machine-readable error code (if provided) |
+| `detail` | `dict \| None` | Additional error details (if provided) |
+
+### Billing errors
+
+Billing and quota responses raise typed subclasses of `FoxnoseAPIError`. They
+are caught by `except FoxnoseAPIError`, and each exposes typed attributes:
+
+| Exception | Status / code | Attributes |
+|-----------|---------------|------------|
+| `SpendCapExceeded` | 402 `spend_cap_reached` | `cap_usd`, `cycle_resets_at`, `raise_cap_url` |
+| `PlanExhausted` | 402 `plan_exhausted` | `axis`, `window_resets_at`, `upgrade_url` |
+| `PlanLimitExceeded` | 403 `plan_limit_exceeded` | `entity`, `limit`, `current`, `upgrade_url` |
+| `RateLimitExceeded` | 429 `rate_limited` | `retry_after` |
+
+```python
+from foxnose_sdk import (
+    SpendCapExceeded,
+    PlanExhausted,
+    PlanLimitExceeded,
+    RateLimitExceeded,
+)
+
+try:
+    client.create_collection({"name": "Blog"})
+except SpendCapExceeded as e:
+    print(f"Spend cap {e.cap_usd}; resets at {e.cycle_resets_at}")
+except PlanExhausted as e:
+    print(f"Allowance for {e.axis} exhausted; resets at {e.window_resets_at}")
+except PlanLimitExceeded as e:
+    print(f"{e.entity}: {e.current}/{e.limit}. Upgrade: {e.upgrade_url}")
+except RateLimitExceeded as e:
+    print(f"Rate limited; retry after {e.retry_after}s")
+```
+
+`upgrade_url` on `PlanLimitExceeded` may be `None` for entities that have a hard
+ceiling with no higher tier.
 
 ## Common Error Codes
 
@@ -107,24 +143,25 @@ try:
     )
 except FoxnoseAPIError as e:
     if e.status_code == 422:
-        print("Validation failed:", e.details)
+        print("Validation failed:", e.detail)
 ```
 
 ### 429 Too Many Requests
 
-Rate limit exceeded:
+Rate limit exceeded. Raised as `RateLimitExceeded`, which exposes the parsed
+`Retry-After` header as `retry_after` (seconds):
 
 ```python
 import time
+from foxnose_sdk import RateLimitExceeded
 
 try:
     for i in range(1000):
-        client.list_folders()
-except FoxnoseAPIError as e:
-    if e.status_code == 429:
-        retry_after = e.details.get("retry_after", 60)
-        print(f"Rate limited. Retry after {retry_after} seconds")
-        time.sleep(retry_after)
+        client.list_collections()
+except RateLimitExceeded as e:
+    retry_after = e.retry_after or 60
+    print(f"Rate limited. Retry after {retry_after} seconds")
+    time.sleep(retry_after)
 ```
 
 ### 500+ Server Errors
@@ -231,8 +268,8 @@ try:
     })
 except FoxnoseAPIError as e:
     if e.status_code in (400, 422):
-        if e.details and "errors" in e.details:
-            for field, messages in e.details["errors"].items():
+        if e.detail and "errors" in e.detail:
+            for field, messages in e.detail["errors"].items():
                 print(f"  {field}: {', '.join(messages)}")
 ```
 

@@ -231,13 +231,13 @@ FLUX_ROLE_JSON = {
 }
 
 ROLE_PERMISSION_JSON = {
-    "content_type": "resources",
-    "actions": ["read", "update"],
+    "content_type": "collection-items",
+    "actions": ["read"],
     "all_objects": True,
 }
 
 PERMISSION_OBJECT_JSON = {
-    "content_type": "folder-items",
+    "content_type": "collection-items",
     "object_key": "folder-1",
 }
 
@@ -482,7 +482,7 @@ async def test_async_organization_plan_and_usage():
 
 @pytest.mark.asyncio
 async def test_async_management_api_key_lifecycle():
-    captured: dict[str, Any] = {"paths": []}
+    captured: dict[str, Any] = {"paths": [], "bodies": []}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["paths"].append((request.method, request.url.path))
@@ -495,6 +495,7 @@ async def test_async_management_api_key_lifecycle():
             }
             return httpx.Response(200, json=payload)
         if request.method == "POST":
+            captured["bodies"].append(json.loads(request.content.decode()))
             return httpx.Response(201, json=MANAGEMENT_API_KEY_JSON)
         if request.method == "GET":
             return httpx.Response(200, json=MANAGEMENT_API_KEY_JSON)
@@ -510,8 +511,11 @@ async def test_async_management_api_key_lifecycle():
     keys = await client.list_management_api_keys()
     assert keys.results[0].public_key == "manage_pub_abc"
 
-    created = await client.create_management_api_key({"description": "Ops key"})
+    created = await client.create_management_api_key(
+        {"description": "Ops key", "role": "role-1"}
+    )
     assert created.secret_key == "manage_sec_xyz"
+    assert captured["bodies"][0] == {"description": "Ops key", "role": "role-1"}
 
     detail = await client.get_management_api_key("api-key-1")
     assert detail.key == "api-key-1"
@@ -528,7 +532,7 @@ async def test_async_management_api_key_lifecycle():
 
 @pytest.mark.asyncio
 async def test_async_flux_api_key_lifecycle():
-    captured: dict[str, Any] = {"paths": []}
+    captured: dict[str, Any] = {"paths": [], "bodies": []}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["paths"].append((request.method, request.url.path))
@@ -541,6 +545,7 @@ async def test_async_flux_api_key_lifecycle():
             }
             return httpx.Response(200, json=payload)
         if request.method == "POST":
+            captured["bodies"].append(json.loads(request.content.decode()))
             return httpx.Response(201, json=FLUX_API_KEY_JSON)
         if request.method == "GET":
             return httpx.Response(200, json=FLUX_API_KEY_JSON)
@@ -556,8 +561,11 @@ async def test_async_flux_api_key_lifecycle():
     keys = await client.list_flux_api_keys()
     assert keys.results[0].public_key == "flux_pub_abc"
 
-    created = await client.create_flux_api_key({"description": "Flux key"})
+    created = await client.create_flux_api_key(
+        {"description": "Flux key", "role": "role-1"}
+    )
     assert created.secret_key == "flux_sec_xyz"
+    assert captured["bodies"][0] == {"description": "Flux key", "role": "role-1"}
 
     detail = await client.get_flux_api_key("flux-key-1")
     assert detail.key == "flux-key-1"
@@ -1013,14 +1021,14 @@ async def test_async_management_role_permissions_workflow():
 
     client = build_async_management_client(handler)
     perms = await client.list_management_role_permissions("role-1")
-    assert perms[0].content_type == "resources"
+    assert perms[0].content_type == "collection-items"
 
     created = await client.upsert_management_role_permission(
         "role-1", ROLE_PERMISSION_JSON
     )
-    assert created.actions == ["read", "update"]
+    assert created.actions == ["read"]
 
-    await client.delete_management_role_permission("role-1", "resources")
+    await client.delete_management_role_permission("role-1", "collection-items")
 
     replaced = await client.replace_management_role_permissions(
         "role-1", [ROLE_PERMISSION_JSON]
@@ -1028,14 +1036,14 @@ async def test_async_management_role_permissions_workflow():
     assert replaced[0].all_objects is True
 
     objects = await client.list_management_permission_objects(
-        "role-1", content_type="folder-items"
+        "role-1", content_type="collection-items"
     )
     assert objects[0].object_key == "folder-1"
 
     added = await client.add_management_permission_object(
         "role-1", PERMISSION_OBJECT_JSON
     )
-    assert added.content_type == "folder-items"
+    assert added.content_type == "collection-items"
     assert added.object_key == "folder-1"
 
     await client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)

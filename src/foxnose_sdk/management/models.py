@@ -335,12 +335,12 @@ class RolePermission(BaseModel):
 
     content_type: str
     actions: list[str]
-    all_objects: bool
+    all_objects: bool | None = None
     objects: list[str] | None = None
 
 
 class RolePermissionObject(BaseModel):
-    """Object-level scope entry for folder-items permissions."""
+    """Object-level scope entry for an object-based permission."""
 
     content_type: str
     object_key: str

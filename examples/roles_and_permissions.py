@@ -25,42 +25,36 @@ def main():
         # Management API Roles
         # ======================
 
-        # Create a Management API role for content editors
+        # Create a Management API role with read-only access
         mgmt_role = client.create_management_role(
             {
-                "name": "Content Editor",
-                "description": "Can manage content but not settings",
+                "name": "Collection Reader",
+                "description": "Read-only access to collection structure and items",
                 "full_access": False,
             }
         )
         print(f"Created Management role: {mgmt_role.key}")
 
-        # Add permissions to the role
-        # Allow read/write access to documents
+        # Grant read-only access to the collection structure
         client.upsert_management_role_permission(
             mgmt_role.key,
             {
-                "content_type": "document",
-                "can_read": True,
-                "can_create": True,
-                "can_update": True,
-                "can_delete": False,  # Cannot delete
+                "content_type": "collection-structure",
+                "actions": ["read"],
             },
         )
-        print("  Added document permissions")
+        print("  Added collection-structure permission (read-only)")
 
-        # Allow read-only access to folders
+        # Grant read-only access to items across all collections
         client.upsert_management_role_permission(
             mgmt_role.key,
             {
-                "content_type": "folder",
-                "can_read": True,
-                "can_create": False,
-                "can_update": False,
-                "can_delete": False,
+                "content_type": "collection-items",
+                "actions": ["read"],
+                "all_objects": True,
             },
         )
-        print("  Added folder permissions (read-only)")
+        print("  Added collection-items permission (read-only, all collections)")
 
         # List all permissions for the role
         permissions = client.list_management_role_permissions(mgmt_role.key)
@@ -79,18 +73,17 @@ def main():
         )
         print(f"\nCreated Flux role: {flux_role.key}")
 
-        # Add permissions - Flux roles typically have read-only access
+        # Add permissions - Flux roles have read-only access.
+        # all_objects=True grants read access to every Flux API in the environment.
         client.upsert_flux_role_permission(
             flux_role.key,
             {
-                "content_type": "document",
-                "can_read": True,
-                "can_create": False,
-                "can_update": False,
-                "can_delete": False,
+                "content_type": "flux-apis",
+                "actions": ["read"],
+                "all_objects": True,
             },
         )
-        print("  Added document read permission")
+        print("  Added flux-apis read permission (all APIs)")
 
         # ======================
         # API Keys
@@ -99,21 +92,21 @@ def main():
         # Create a Management API key with the role
         mgmt_key = client.create_management_api_key(
             {
-                "name": "Editor API Key",
-                "roles": [mgmt_role.key],
+                "description": "Reader API key",
+                "role": mgmt_role.key,
             }
         )
-        print(f"\nCreated Management API key: {mgmt_key.key}")
-        # Note: The actual secret is only shown once upon creation
+        print(f"\nCreated Management API key: {mgmt_key.public_key}")
+        # Note: the secret key (mgmt_key.secret_key) is only returned once here
 
         # Create a Flux API key for frontend
         flux_key = client.create_flux_api_key(
             {
-                "name": "Frontend API Key",
-                "roles": [flux_role.key],
+                "description": "Frontend API key",
+                "role": flux_role.key,
             }
         )
-        print(f"Created Flux API key: {flux_key.key}")
+        print(f"Created Flux API key: {flux_key.public_key}")
 
         # ======================
         # Cleanup

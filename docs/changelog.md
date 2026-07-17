@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-16
+
+### Fixed
+
+- `RolePermission.all_objects` is now optional (`bool | None`), so permissions for non-object-based content types — which the API returns with `all_objects: null` — parse without error.
+- Corrected the `roles_and_permissions` example and the docs to the real permission wire-shape (`content_type` + `actions` list, with `all_objects` only on object-based content types), the renamed content-type keys (`collection-structure` / `collection-items` in place of `folder-*`), and the real API-key create shape (`description` + a single `role`).
+
 ## [0.5.0] - 2026-03-19
 
 ### Added

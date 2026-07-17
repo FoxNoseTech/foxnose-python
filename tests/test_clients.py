@@ -33,6 +33,7 @@ from foxnose_sdk.management.models import (
     FolderSummary,
     ResourceSummary,
     RevisionSummary,
+    RolePermission,
 )
 
 ORG_KEY = "org-1"
@@ -285,13 +286,13 @@ MANAGEMENT_ROLE_JSON = {
 }
 
 ROLE_PERMISSION_JSON = {
-    "content_type": "resources",
-    "actions": ["read", "update"],
+    "content_type": "collection-items",
+    "actions": ["read"],
     "all_objects": True,
 }
 
 PERMISSION_OBJECT_JSON = {
-    "content_type": "folder-items",
+    "content_type": "collection-items",
     "object_key": "folder-1",
 }
 
@@ -598,8 +599,11 @@ def test_management_api_key_lifecycle():
     keys = client.list_management_api_keys()
     assert keys.results[0].public_key == "manage_pub_abc"
 
-    created = client.create_management_api_key({"description": "Ops key"})
+    created = client.create_management_api_key(
+        {"description": "Ops key", "role": "role-1"}
+    )
     assert created.secret_key == "manage_sec_xyz"
+    assert captured["bodies"][0] == {"description": "Ops key", "role": "role-1"}
 
     detail = client.get_management_api_key("api-key-1")
     assert detail.key == "api-key-1"
@@ -643,8 +647,9 @@ def test_flux_api_key_lifecycle():
     keys = client.list_flux_api_keys()
     assert keys.results[0].public_key == "flux_pub_abc"
 
-    created = client.create_flux_api_key({"description": "Flux key"})
+    created = client.create_flux_api_key({"description": "Flux key", "role": "role-1"})
     assert created.secret_key == "flux_sec_xyz"
+    assert captured["bodies"][0] == {"description": "Flux key", "role": "role-1"}
 
     detail = client.get_flux_api_key("flux-key-1")
     assert detail.key == "flux-key-1"
@@ -748,12 +753,12 @@ def test_management_role_permissions_workflow():
 
     client = build_management_client(handler)
     permissions = client.list_management_role_permissions("role-1")
-    assert permissions[0].content_type == "resources"
+    assert permissions[0].content_type == "collection-items"
 
     created = client.upsert_management_role_permission("role-1", ROLE_PERMISSION_JSON)
-    assert created.actions == ["read", "update"]
+    assert created.actions == ["read"]
 
-    client.delete_management_role_permission("role-1", "resources")
+    client.delete_management_role_permission("role-1", "collection-items")
 
     replaced = client.replace_management_role_permissions(
         "role-1", [ROLE_PERMISSION_JSON]
@@ -761,21 +766,75 @@ def test_management_role_permissions_workflow():
     assert replaced[0].all_objects is True
 
     objects = client.list_management_permission_objects(
-        "role-1", content_type="folder-items"
+        "role-1", content_type="collection-items"
     )
     assert objects[0].object_key == "folder-1"
 
     added = client.add_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
-    assert added.content_type == "folder-items"
+    assert added.content_type == "collection-items"
     assert added.object_key == "folder-1"
 
     client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
 
     assert any("/permissions/batch/" in path for _, path in recorded)
     assert any(
-        body.get("content_type") == "folder-items"
+        body.get("content_type") == "collection-items"
         for body in bodies
         if isinstance(body, dict)
+    )
+
+
+def test_upsert_management_role_permission_serializes_wire_shape():
+    """The request body is forwarded verbatim: object-based grants carry
+    ``all_objects``, non-object-based grants omit it entirely."""
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        bodies.append(body)
+        return httpx.Response(201, json=body)
+
+    client = build_management_client(handler)
+
+    structure = client.upsert_management_role_permission(
+        "role-1", {"content_type": "collection-structure", "actions": ["read"]}
+    )
+    items = client.upsert_management_role_permission(
+        "role-1",
+        {"content_type": "collection-items", "actions": ["read"], "all_objects": True},
+    )
+
+    assert bodies[0] == {"content_type": "collection-structure", "actions": ["read"]}
+    assert "all_objects" not in bodies[0]
+    assert bodies[1] == {
+        "content_type": "collection-items",
+        "actions": ["read"],
+        "all_objects": True,
+    }
+
+    # Non-object-based permissions come back with all_objects unset.
+    assert structure.all_objects is None
+    assert items.all_objects is True
+
+
+def test_role_permission_accepts_null_all_objects():
+    """Non-object-based content types return ``all_objects: null``; the model
+    must parse that instead of requiring a boolean."""
+    assert (
+        RolePermission.model_validate(
+            {"content_type": "collection-structure", "actions": ["read"]}
+        ).all_objects
+        is None
+    )
+    assert (
+        RolePermission.model_validate(
+            {
+                "content_type": "collection-structure",
+                "actions": ["read"],
+                "all_objects": None,
+            }
+        ).all_objects
+        is None
     )
 
 

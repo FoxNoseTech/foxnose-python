@@ -222,7 +222,6 @@ role = client.create_management_role({
 client.upsert_management_role_permission(role.key, {
     "content_type": "resources",
     "actions": ["read", "create", "update"],
-    "all_objects": True,
 })
 
 # Create an API key with this role

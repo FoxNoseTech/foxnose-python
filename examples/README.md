@@ -65,14 +65,14 @@ auth = APIKeyAuth("YOUR_API_KEY")
 
 ## Error Handling
 
-All API errors raise `FoxNoseAPIError`:
+All API errors raise `FoxnoseAPIError`:
 
 ```python
-from foxnose_sdk.errors import FoxNoseAPIError
+from foxnose_sdk.errors import FoxnoseAPIError
 
 try:
     resource = client.get_resource(folder_key, resource_key)
-except FoxNoseAPIError as e:
+except FoxnoseAPIError as e:
     print(f"Status: {e.status_code}")
     print(f"Message: {e.message}")
     print(f"Details: {e.detail}")

@@ -138,6 +138,35 @@ needed advancing). On compatibility conflict the server returns 409
 `component_sync_conflict`; quota exhaustion returns 422
 `too_many_versions`. Both surface as `FoxnoseAPIError`.
 
+### Handling billing errors
+
+Billing and quota responses raise typed subclasses of `FoxnoseAPIError`, so
+existing `except FoxnoseAPIError` handlers keep working while new code can read
+the typed attributes:
+
+```python
+from foxnose_sdk import (
+    SpendCapExceeded,
+    PlanExhausted,
+    PlanLimitExceeded,
+    RateLimitExceeded,
+)
+
+try:
+    client.create_collection({"name": "Blog"})
+except SpendCapExceeded as e:  # HTTP 402
+    print(f"Spend cap {e.cap_usd}; resets at {e.cycle_resets_at}: {e.raise_cap_url}")
+except PlanExhausted as e:  # HTTP 402
+    print(f"Allowance for {e.axis} exhausted; resets at {e.window_resets_at}")
+except PlanLimitExceeded as e:  # HTTP 403
+    print(f"{e.entity}: {e.current}/{e.limit}. Upgrade: {e.upgrade_url}")
+except RateLimitExceeded as e:  # HTTP 429
+    print(f"Rate limited; retry after {e.retry_after}s")
+```
+
+All four subclass `FoxnoseAPIError`, so a single `except FoxnoseAPIError` still
+catches them if you don't need the typed fields.
+
 ### Flux Client
 
 ```python

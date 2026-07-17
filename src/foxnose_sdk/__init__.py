@@ -18,6 +18,10 @@ from .errors import (
     FoxnoseAuthError,
     FoxnoseError,
     FoxnoseTransportError,
+    PlanExhausted,
+    PlanLimitExceeded,
+    RateLimitExceeded,
+    SpendCapExceeded,
 )
 from .flux.client import AsyncFluxClient, FluxClient
 from .flux.models import (
@@ -112,6 +116,10 @@ __all__ = [
     "FoxnoseAPIError",
     "FoxnoseAuthError",
     "FoxnoseTransportError",
+    "SpendCapExceeded",
+    "PlanExhausted",
+    "PlanLimitExceeded",
+    "RateLimitExceeded",
     "ManagementClient",
     "AsyncManagementClient",
     "FluxClient",

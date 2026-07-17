@@ -9,7 +9,7 @@ import httpx
 
 from .auth.base import AnonymousAuth, AuthStrategy, RequestData
 from .config import FoxnoseConfig, RetryConfig
-from .errors import FoxnoseAPIError, FoxnoseTransportError
+from .errors import FoxnoseTransportError, build_api_error
 
 JSONDecoder = Callable[[httpx.Response], Any]
 
@@ -243,13 +243,14 @@ class HttpTransport:
         if response.content:
             try:
                 payload = response.json()
-                message = payload.get("message", message)
-                error_code = payload.get("error_code")
-                detail = payload.get("detail")
                 body = payload
+                if isinstance(payload, dict):
+                    message = payload.get("message", message)
+                    error_code = payload.get("error_code")
+                    detail = payload.get("detail")
             except json.JSONDecodeError:
                 body = response.text
-        raise FoxnoseAPIError(
+        raise build_api_error(
             message=message or "API request failed",
             status_code=response.status_code,
             error_code=error_code,

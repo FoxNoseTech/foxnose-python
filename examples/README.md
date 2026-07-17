@@ -75,7 +75,7 @@ try:
 except FoxNoseAPIError as e:
     print(f"Status: {e.status_code}")
     print(f"Message: {e.message}")
-    print(f"Details: {e.details}")
+    print(f"Details: {e.detail}")
 ```
 
 ## Need Help?

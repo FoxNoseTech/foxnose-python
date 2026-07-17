@@ -449,7 +449,7 @@ class ManagementClient(_ManagementPathsMixin):
         """Create a new Management API key.
 
         Args:
-            payload: Key configuration including name and role assignments.
+            payload: Key configuration: a ``description`` and an optional single ``role``.
         """
         data = self.request(
             "POST", f"{self._management_api_keys_root()}/", json_body=payload
@@ -509,7 +509,7 @@ class ManagementClient(_ManagementPathsMixin):
         """Create a new Flux API key.
 
         Args:
-            payload: Key configuration including name and role assignments.
+            payload: Key configuration: a ``description`` and an optional single ``role``.
         """
         data = self.request("POST", f"{self._flux_api_keys_root()}/", json_body=payload)
         return FluxAPIKeySummary.model_validate(data)

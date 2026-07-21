@@ -7,10 +7,13 @@ from typing import Any, Mapping, Union
 
 from pydantic import BaseModel
 
+from .._deprecation import warn_deprecated_method
 from ..auth import AuthStrategy
 from ..config import FoxnoseConfig, RetryConfig
 from ..http import HttpTransport
 from .models import (
+    APICollectionList,
+    APICollectionSummary,
     APIFolderList,
     APIFolderSummary,
     APIInfo,
@@ -28,6 +31,8 @@ from .models import (
     FluxAPIKeySummary,
     FluxRoleList,
     FluxRoleSummary,
+    CollectionList,
+    CollectionSummary,
     FolderList,
     FolderSummary,
     LocaleList,
@@ -51,6 +56,7 @@ from .models import (
     RolePermissionObject,
     SchemaVersionList,
     SchemaVersionSummary,
+    SyncComponentResponse,
 )
 
 
@@ -112,6 +118,8 @@ def _coerce_permission_object_payload(
 
 
 FolderRef = Union[str, FolderSummary]
+# Collection-named alias — same union, preferred name in new code.
+CollectionRef = FolderRef
 ResourceRef = Union[str, ResourceSummary]
 RevisionRef = Union[str, RevisionSummary]
 ComponentRef = Union[str, ComponentSummary]
@@ -149,7 +157,7 @@ class _ManagementPathsMixin:
     ) -> str:
         return f"{self._environments_base(org_key, project_key)}/{environment_key}"
 
-    # Folder paths
+    # Folder paths (deprecated — see Collection paths below).
     def _folders_root(self) -> str:
         return f"/v1/{self.environment_key}/folders"
 
@@ -167,6 +175,32 @@ class _ManagementPathsMixin:
 
     def _folder_schema_tree(self, folder_key: str, version_key: str) -> str:
         return f"{self._folder_versions_base(folder_key)}/{version_key}/schema/tree"
+
+    # Collection paths (canonical going forward; folder paths above hit the
+    # deprecated /folders/ URL alias on the server side).
+    def _collections_root(self) -> str:
+        return f"/v1/{self.environment_key}/collections"
+
+    def _collections_tree_root(self) -> str:
+        return f"{self._collections_root()}/tree"
+
+    def _collections_tree_item(self) -> str:
+        return f"{self._collections_tree_root()}/collection"
+
+    def _collection_root(self, collection_key: str) -> str:
+        return f"{self._collections_root()}/{collection_key}"
+
+    def _collection_versions_base(self, collection_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/model/versions"
+
+    def _collection_schema_tree(self, collection_key: str, version_key: str) -> str:
+        return f"{self._collection_versions_base(collection_key)}/{version_key}/schema/tree"
+
+    def _collection_sync_component(self, collection_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/sync_component"
+
+    def _api_collections_root(self, api_key: str) -> str:
+        return f"{self._api_root(api_key)}/collections"
 
     # Component paths
     def _components_root(self) -> str:
@@ -414,7 +448,7 @@ class ManagementClient(_ManagementPathsMixin):
         """Create a new Management API key.
 
         Args:
-            payload: Key configuration including name and role assignments.
+            payload: Key configuration: a ``description`` and an optional single ``role``.
         """
         data = self.request(
             "POST", f"{self._management_api_keys_root()}/", json_body=payload
@@ -474,7 +508,7 @@ class ManagementClient(_ManagementPathsMixin):
         """Create a new Flux API key.
 
         Args:
-            payload: Key configuration including name and role assignments.
+            payload: Key configuration: a ``description`` and an optional single ``role``.
         """
         data = self.request("POST", f"{self._flux_api_keys_root()}/", json_body=payload)
         return FluxAPIKeySummary.model_validate(data)
@@ -565,15 +599,132 @@ class ManagementClient(_ManagementPathsMixin):
         api_key = _resolve_key(api_key)
         self.request("DELETE", f"{self._api_root(api_key)}/", parse_json=False)
 
-    def list_api_folders(
+    # ------------------------------------------------------------------ #
+    # API ↔ Collection association (canonical)
+    # ------------------------------------------------------------------ #
+
+    def list_api_collections(
         self, api_key: APIRef, *, params: Mapping[str, Any] | None = None
-    ) -> APIFolderList:
-        """List folders exposed through an API.
+    ) -> APICollectionList:
+        """List collections exposed through an API.
 
         Args:
             api_key: Unique identifier of the API.
             params: Optional query parameters for filtering/pagination.
         """
+        api_key = _resolve_key(api_key)
+        data = self.request(
+            "GET", f"{self._api_collections_root(api_key)}/", params=params
+        )
+        return APICollectionList.model_validate(data)
+
+    def add_api_collection(
+        self,
+        api_key: APIRef,
+        collection_key: CollectionRef,
+        *,
+        allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
+    ) -> APICollectionSummary:
+        """Add a collection to an API.
+
+        Args:
+            api_key: Unique identifier of the API.
+            collection_key: Unique identifier of the collection to add.
+            allowed_methods: HTTP methods allowed (e.g., ``["GET", "POST"]``).
+            description_get_one: Optional short description for the get-one route.
+            description_get_many: Optional short description for the list route.
+            description_search: Optional short description for the search route.
+            description_schema: Optional short description for the schema route.
+
+        Note:
+            The POST body uses the wire field name ``folder`` for compatibility.
+        """
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        payload: dict[str, Any] = {"folder": collection_key}
+        if allowed_methods is not None:
+            payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
+        data = self.request(
+            "POST", f"{self._api_collections_root(api_key)}/", json_body=payload
+        )
+        return APICollectionSummary.model_validate(data)
+
+    def get_api_collection(
+        self, api_key: APIRef, collection_key: CollectionRef
+    ) -> APICollectionSummary:
+        """Retrieve details for a collection within an API."""
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "GET", f"{self._api_collections_root(api_key)}/{collection_key}/"
+        )
+        return APICollectionSummary.model_validate(data)
+
+    def update_api_collection(
+        self,
+        api_key: APIRef,
+        collection_key: CollectionRef,
+        *,
+        allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
+    ) -> APICollectionSummary:
+        """Update a collection's configuration within an API."""
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        payload: dict[str, Any] = {}
+        if allowed_methods is not None:
+            payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
+        data = self.request(
+            "PUT",
+            f"{self._api_collections_root(api_key)}/{collection_key}/",
+            json_body=payload,
+        )
+        return APICollectionSummary.model_validate(data)
+
+    def remove_api_collection(
+        self, api_key: APIRef, collection_key: CollectionRef
+    ) -> None:
+        """Remove a collection from an API."""
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        self.request(
+            "DELETE",
+            f"{self._api_collections_root(api_key)}/{collection_key}/",
+            parse_json=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # API ↔ Folder association (deprecated; hit legacy /folders/ alias)
+    # ------------------------------------------------------------------ #
+
+    def list_api_folders(
+        self, api_key: APIRef, *, params: Mapping[str, Any] | None = None
+    ) -> APIFolderList:
+        """Deprecated alias for :meth:`list_api_collections`."""
+        warn_deprecated_method("list_api_folders", "list_api_collections")
         api_key = _resolve_key(api_key)
         data = self.request("GET", f"{self._api_folders_root(api_key)}/", params=params)
         return APIFolderList.model_validate(data)
@@ -589,17 +740,8 @@ class ManagementClient(_ManagementPathsMixin):
         description_search: str | None = None,
         description_schema: str | None = None,
     ) -> APIFolderSummary:
-        """Add a folder to an API.
-
-        Args:
-            api_key: Unique identifier of the API.
-            folder_key: Unique identifier of the folder to add.
-            allowed_methods: HTTP methods allowed for this folder (e.g., ["GET", "POST"]).
-            description_get_one: Optional short description for the get-one route.
-            description_get_many: Optional short description for the list route.
-            description_search: Optional short description for the search route.
-            description_schema: Optional short description for the schema route.
-        """
+        """Deprecated alias for :meth:`add_api_collection`."""
+        warn_deprecated_method("add_api_folder", "add_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {"folder": folder_key}
@@ -621,12 +763,8 @@ class ManagementClient(_ManagementPathsMixin):
     def get_api_folder(
         self, api_key: APIRef, folder_key: FolderRef
     ) -> APIFolderSummary:
-        """Retrieve details for a folder within an API.
-
-        Args:
-            api_key: Unique identifier of the API.
-            folder_key: Unique identifier of the folder.
-        """
+        """Deprecated alias for :meth:`get_api_collection`."""
+        warn_deprecated_method("get_api_folder", "get_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         data = self.request("GET", f"{self._api_folders_root(api_key)}/{folder_key}/")
@@ -643,17 +781,8 @@ class ManagementClient(_ManagementPathsMixin):
         description_search: str | None = None,
         description_schema: str | None = None,
     ) -> APIFolderSummary:
-        """Update a folder's configuration within an API.
-
-        Args:
-            api_key: Unique identifier of the API.
-            folder_key: Unique identifier of the folder.
-            allowed_methods: HTTP methods allowed for this folder.
-            description_get_one: Optional short description for the get-one route.
-            description_get_many: Optional short description for the list route.
-            description_search: Optional short description for the search route.
-            description_schema: Optional short description for the schema route.
-        """
+        """Deprecated alias for :meth:`update_api_collection`."""
+        warn_deprecated_method("update_api_folder", "update_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {}
@@ -673,12 +802,8 @@ class ManagementClient(_ManagementPathsMixin):
         return APIFolderSummary.model_validate(data)
 
     def remove_api_folder(self, api_key: APIRef, folder_key: FolderRef) -> None:
-        """Remove a folder from an API.
-
-        Args:
-            api_key: Unique identifier of the API.
-            folder_key: Unique identifier of the folder to remove.
-        """
+        """Deprecated alias for :meth:`remove_api_collection`."""
+        warn_deprecated_method("remove_api_folder", "remove_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         self.request(
@@ -1060,25 +1185,126 @@ class ManagementClient(_ManagementPathsMixin):
         )
 
     # ------------------------------------------------------------------ #
-    # Folder operations
+    # Collection operations (canonical going forward)
     # ------------------------------------------------------------------ #
 
-    def list_folders(self, *, params: Mapping[str, Any] | None = None) -> FolderList:
-        """List all folders in the environment.
+    def list_collections(
+        self, *, params: Mapping[str, Any] | None = None
+    ) -> CollectionList:
+        """List all collections in the environment.
 
         Args:
             params: Optional query parameters for filtering/pagination.
         """
-        path = f"{self._folders_tree_root()}/"
-        data = self.request("GET", path, params=params)
+        data = self.request("GET", f"{self._collections_tree_root()}/", params=params)
+        return CollectionList.model_validate(data)
+
+    def get_collection(self, collection_key: CollectionRef) -> CollectionSummary:
+        """Retrieve details for a specific collection by key.
+
+        Args:
+            collection_key: Unique identifier of the collection.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "GET", f"{self._collections_tree_item()}/", params={"key": collection_key}
+        )
+        return CollectionSummary.model_validate(data)
+
+    def get_collection_by_path(self, path: str) -> CollectionSummary:
+        """Retrieve details for a collection by its hierarchical path.
+
+        Args:
+            path: Hierarchical path to the collection (e.g., "parent/child").
+        """
+        data = self.request(
+            "GET", f"{self._collections_tree_item()}/", params={"path": path}
+        )
+        return CollectionSummary.model_validate(data)
+
+    def list_collection_tree(
+        self,
+        *,
+        key: str | None = None,
+        mode: str | None = None,
+    ) -> CollectionList:
+        """List collections as a hierarchical tree.
+
+        Args:
+            key: Optional root collection key to start from.
+            mode: Tree traversal mode.
+        """
+        params: dict[str, Any] = {}
+        if key:
+            params["key"] = key
+        if mode:
+            params["mode"] = mode
+        data = self.request(
+            "GET", f"{self._collections_tree_root()}/", params=params or None
+        )
+        return CollectionList.model_validate(data)
+
+    def create_collection(self, payload: Mapping[str, Any]) -> CollectionSummary:
+        """Create a new collection.
+
+        Args:
+            payload: Collection configuration including name, alias, folder_type, and
+                content_type. JSON wire field names (``folder_type``, etc.) are
+                preserved for backwards compatibility.
+        """
+        data = self.request(
+            "POST", f"{self._collections_tree_root()}/", json_body=payload
+        )
+        return CollectionSummary.model_validate(data)
+
+    def update_collection(
+        self, collection_key: CollectionRef, payload: Mapping[str, Any]
+    ) -> CollectionSummary:
+        """Update a collection's configuration.
+
+        Args:
+            collection_key: Unique identifier of the collection.
+            payload: Fields to update.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "PUT",
+            f"{self._collections_tree_item()}/",
+            params={"key": collection_key},
+            json_body=payload,
+        )
+        return CollectionSummary.model_validate(data)
+
+    def delete_collection(self, collection_key: CollectionRef) -> None:
+        """Delete a collection.
+
+        Args:
+            collection_key: Unique identifier of the collection to delete.
+        """
+        collection_key = _resolve_key(collection_key)
+        self.request(
+            "DELETE",
+            f"{self._collections_tree_item()}/",
+            params={"key": collection_key},
+            parse_json=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Folder operations (deprecated — hit the legacy /folders/ URL alias on
+    # the server; method body unchanged from pre-rename for wire-compat. The
+    # only behavioural change is a one-shot DeprecationWarning. Will be
+    # removed in 1.0; new code should use the Collection methods above.)
+    # ------------------------------------------------------------------ #
+
+    def list_folders(self, *, params: Mapping[str, Any] | None = None) -> FolderList:
+        """Deprecated alias for :meth:`list_collections`. Hits /folders/ URL."""
+        warn_deprecated_method("list_folders", "list_collections")
+        data = self.request("GET", f"{self._folders_tree_root()}/", params=params)
         return FolderList.model_validate(data)
 
     def get_folder(self, folder_key: FolderRef) -> FolderSummary:
-        """Retrieve details for a specific folder by key.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-        """
+        """Deprecated alias for :meth:`get_collection`. Hits /folders/ URL."""
+        warn_deprecated_method("get_folder", "get_collection")
         folder_key = _resolve_key(folder_key)
         data = self.request(
             "GET", f"{self._folders_tree_item()}/", params={"key": folder_key}
@@ -1086,15 +1312,10 @@ class ManagementClient(_ManagementPathsMixin):
         return FolderSummary.model_validate(data)
 
     def get_folder_by_path(self, path: str) -> FolderSummary:
-        """Retrieve details for a folder by its path.
-
-        Args:
-            path: Hierarchical path to the folder (e.g., "parent/child").
-        """
+        """Deprecated alias for :meth:`get_collection_by_path`. Hits /folders/ URL."""
+        warn_deprecated_method("get_folder_by_path", "get_collection_by_path")
         data = self.request(
-            "GET",
-            f"{self._folders_tree_item()}/",
-            params={"path": path},
+            "GET", f"{self._folders_tree_item()}/", params={"path": path}
         )
         return FolderSummary.model_validate(data)
 
@@ -1104,39 +1325,29 @@ class ManagementClient(_ManagementPathsMixin):
         key: str | None = None,
         mode: str | None = None,
     ) -> FolderList:
-        """List folders as a hierarchical tree.
-
-        Args:
-            key: Optional root folder key to start from.
-            mode: Tree traversal mode.
-        """
+        """Deprecated alias for :meth:`list_collection_tree`. Hits /folders/ URL."""
+        warn_deprecated_method("list_folder_tree", "list_collection_tree")
         params: dict[str, Any] = {}
         if key:
             params["key"] = key
         if mode:
             params["mode"] = mode
-        path = f"{self._folders_tree_root()}/"
-        data = self.request("GET", path, params=params or None)
+        data = self.request(
+            "GET", f"{self._folders_tree_root()}/", params=params or None
+        )
         return FolderList.model_validate(data)
 
     def create_folder(self, payload: Mapping[str, Any]) -> FolderSummary:
-        """Create a new folder.
-
-        Args:
-            payload: Folder configuration including name, alias, folder_type, and content_type.
-        """
+        """Deprecated alias for :meth:`create_collection`. Hits /folders/ URL."""
+        warn_deprecated_method("create_folder", "create_collection")
         data = self.request("POST", f"{self._folders_tree_root()}/", json_body=payload)
         return FolderSummary.model_validate(data)
 
     def update_folder(
         self, folder_key: FolderRef, payload: Mapping[str, Any]
     ) -> FolderSummary:
-        """Update a folder's configuration.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            payload: Fields to update.
-        """
+        """Deprecated alias for :meth:`update_collection`. Hits /folders/ URL."""
+        warn_deprecated_method("update_folder", "update_collection")
         folder_key = _resolve_key(folder_key)
         data = self.request(
             "PUT",
@@ -1147,11 +1358,8 @@ class ManagementClient(_ManagementPathsMixin):
         return FolderSummary.model_validate(data)
 
     def delete_folder(self, folder_key: FolderRef) -> None:
-        """Delete a folder.
-
-        Args:
-            folder_key: Unique identifier of the folder to delete.
-        """
+        """Deprecated alias for :meth:`delete_collection`. Hits /folders/ URL."""
+        warn_deprecated_method("delete_folder", "delete_collection")
         folder_key = _resolve_key(folder_key)
         self.request(
             "DELETE",
@@ -1765,7 +1973,185 @@ class ManagementClient(_ManagementPathsMixin):
         )
 
     # ------------------------------------------------------------------ #
-    # Collection folder schema operations
+    # Collection schema version operations (canonical)
+    # ------------------------------------------------------------------ #
+
+    def list_collection_versions(
+        self,
+        collection_key: CollectionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> SchemaVersionList:
+        """List all schema versions for a collection."""
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "GET", f"{self._collection_versions_base(collection_key)}/", params=params
+        )
+        return SchemaVersionList.model_validate(data)
+
+    def create_collection_version(
+        self,
+        collection_key: CollectionRef,
+        payload: Mapping[str, Any],
+        *,
+        copy_from: SchemaVersionRef | None = None,
+    ) -> SchemaVersionSummary:
+        """Create a new schema version for a collection.
+
+        Args:
+            collection_key: Unique identifier of the collection.
+            payload: Version configuration including name.
+            copy_from: Optional version key to copy schema from.
+        """
+        collection_key = _resolve_key(collection_key)
+        copy_from = _resolve_key(copy_from) if copy_from is not None else None
+        params = {"copy_from": copy_from} if copy_from else None
+        data = self.request(
+            "POST",
+            f"{self._collection_versions_base(collection_key)}/",
+            params=params,
+            json_body=payload,
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    def get_collection_version(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        *,
+        include_schema: bool | None = None,
+    ) -> SchemaVersionSummary:
+        """Retrieve details for a specific collection schema version."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        params = (
+            {"include_schema": str(include_schema).lower()}
+            if include_schema is not None
+            else None
+        )
+        data = self.request(
+            "GET",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/",
+            params=params,
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    def update_collection_version(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        payload: Mapping[str, Any],
+    ) -> SchemaVersionSummary:
+        """Update a collection schema version's configuration."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = self.request(
+            "PUT",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/",
+            json_body=payload,
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    def delete_collection_version(
+        self, collection_key: CollectionRef, version_key: SchemaVersionRef
+    ) -> None:
+        """Delete a collection schema version."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        self.request(
+            "DELETE",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/",
+            parse_json=False,
+        )
+
+    def publish_collection_version(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+    ) -> SchemaVersionSummary:
+        """Publish a collection schema version, making it active."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = self.request(
+            "POST",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/publish/",
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    def sync_collection_component(
+        self,
+        collection_key: CollectionRef,
+        *,
+        field_paths: Sequence[str] | None = None,
+        to_versions: Mapping[str, str] | None = None,
+    ) -> SyncComponentResponse:
+        """Advance pinned nested fields on a Collection to a target Component version.
+
+        Creates a new published Collection schema version with the
+        affected ``meta.component_version`` pins advanced. ``auto_update=True``
+        fields and fields already at the target version are reported in
+        ``skipped`` rather than advanced.
+
+        Parameters
+        ----------
+        collection_key:
+            The Collection to sync.
+        field_paths:
+            Optional list of nested field paths to advance. When omitted,
+            every pinned (``auto_update=False``) nested field on the
+            Collection's current version is considered.
+        to_versions:
+            Optional per-path override mapping field path → target
+            Component Version UID. Paths not in this mapping advance to
+            the referenced Component's ``current_version``. When both
+            ``field_paths`` and ``to_versions`` are supplied, every key in
+            ``to_versions`` must also appear in ``field_paths``.
+
+        Returns
+        -------
+        SyncComponentResponse
+            Summary of synced and skipped paths, plus the new
+            ``schema_version`` UID (``None`` if no paths were advanced).
+
+        Raises
+        ------
+        ValueError
+            Locally raised before any HTTP request when both ``field_paths``
+            and ``to_versions`` are supplied AND ``to_versions`` contains a
+            key that is not in ``field_paths``. Mirrors the server-side
+            validator so the misuse surfaces at the call-site.
+        FoxnoseAPIError
+            On 409 ``component_sync_conflict`` when the target version
+            would break existing resources, on 422 ``too_many_versions``
+            when the Collection's schema quota is exhausted, on 404 when
+            the Collection or a specified target version is missing, or
+            on 422 ``validation_error`` when the request body is invalid.
+        """
+        collection_key = _resolve_key(collection_key)
+        # Client-side invariant (mirrors server validator): every key in
+        # to_versions must also appear in field_paths when both are supplied.
+        # Catch the misuse locally instead of round-tripping a 422.
+        if field_paths is not None and to_versions:
+            extras = set(to_versions.keys()) - set(field_paths)
+            if extras:
+                raise ValueError(
+                    "to_versions includes paths not present in field_paths: "
+                    f"{sorted(extras)}"
+                )
+        body: dict[str, Any] = {}
+        if field_paths is not None:
+            body["field_paths"] = list(field_paths)
+        if to_versions is not None:
+            body["to_versions"] = dict(to_versions)
+        data = self.request(
+            "POST",
+            f"{self._collection_sync_component(collection_key)}/",
+            json_body=body,
+        )
+        return SyncComponentResponse.model_validate(data)
+
+    # ------------------------------------------------------------------ #
+    # Folder schema version operations (deprecated)
     # ------------------------------------------------------------------ #
 
     def list_folder_versions(
@@ -1774,12 +2160,8 @@ class ManagementClient(_ManagementPathsMixin):
         *,
         params: Mapping[str, Any] | None = None,
     ) -> SchemaVersionList:
-        """List all schema versions for a collection folder.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            params: Optional query parameters for filtering/pagination.
-        """
+        """Deprecated alias for :meth:`list_collection_versions`."""
+        warn_deprecated_method("list_folder_versions", "list_collection_versions")
         folder_key = _resolve_key(folder_key)
         data = self.request(
             "GET", f"{self._folder_versions_base(folder_key)}/", params=params
@@ -1793,13 +2175,8 @@ class ManagementClient(_ManagementPathsMixin):
         *,
         copy_from: SchemaVersionRef | None = None,
     ) -> SchemaVersionSummary:
-        """Create a new schema version for a collection folder.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            payload: Version configuration including name.
-            copy_from: Optional version key to copy schema from.
-        """
+        """Deprecated alias for :meth:`create_collection_version`."""
+        warn_deprecated_method("create_folder_version", "create_collection_version")
         folder_key = _resolve_key(folder_key)
         copy_from = _resolve_key(copy_from) if copy_from is not None else None
         params = {"copy_from": copy_from} if copy_from else None
@@ -1818,13 +2195,8 @@ class ManagementClient(_ManagementPathsMixin):
         *,
         include_schema: bool | None = None,
     ) -> SchemaVersionSummary:
-        """Retrieve details for a specific folder schema version.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            include_schema: Whether to include the full schema definition.
-        """
+        """Deprecated alias for :meth:`get_collection_version`."""
+        warn_deprecated_method("get_folder_version", "get_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         params = (
@@ -1845,13 +2217,8 @@ class ManagementClient(_ManagementPathsMixin):
         version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> SchemaVersionSummary:
-        """Update a folder schema version's configuration.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            payload: Fields to update.
-        """
+        """Deprecated alias for :meth:`update_collection_version`."""
+        warn_deprecated_method("update_folder_version", "update_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = self.request(
@@ -1864,12 +2231,8 @@ class ManagementClient(_ManagementPathsMixin):
     def delete_folder_version(
         self, folder_key: FolderRef, version_key: SchemaVersionRef
     ) -> None:
-        """Delete a folder schema version.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version to delete.
-        """
+        """Deprecated alias for :meth:`delete_collection_version`."""
+        warn_deprecated_method("delete_folder_version", "delete_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         self.request(
@@ -1883,12 +2246,8 @@ class ManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         version_key: SchemaVersionRef,
     ) -> SchemaVersionSummary:
-        """Publish a folder schema version, making it active for the folder.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version to publish.
-        """
+        """Deprecated alias for :meth:`publish_collection_version`."""
+        warn_deprecated_method("publish_folder_version", "publish_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = self.request(
@@ -1897,6 +2256,97 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return SchemaVersionSummary.model_validate(data)
 
+    # ------------------------------------------------------------------ #
+    # Collection schema field operations (canonical)
+    # ------------------------------------------------------------------ #
+
+    def list_collection_fields(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> FieldList:
+        """List all fields in a collection schema version."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = self.request(
+            "GET",
+            f"{self._collection_schema_tree(collection_key, version_key)}/",
+            params=params,
+        )
+        return FieldList.model_validate(data)
+
+    def create_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        payload: Mapping[str, Any],
+    ) -> FieldSummary:
+        """Add a new field to a collection schema version."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = self.request(
+            "POST",
+            f"{self._collection_schema_tree(collection_key, version_key)}/",
+            json_body=payload,
+        )
+        return FieldSummary.model_validate(data)
+
+    def get_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
+    ) -> FieldSummary:
+        """Retrieve details for a specific field in a collection schema."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = self.request(
+            "GET",
+            f"{self._collection_schema_tree(collection_key, version_key)}/field/",
+            params={"path": field_path},
+        )
+        return FieldSummary.model_validate(data)
+
+    def update_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
+        payload: Mapping[str, Any],
+    ) -> FieldSummary:
+        """Update a field in a collection schema."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = self.request(
+            "PUT",
+            f"{self._collection_schema_tree(collection_key, version_key)}/field/",
+            params={"path": field_path},
+            json_body=payload,
+        )
+        return FieldSummary.model_validate(data)
+
+    def delete_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
+    ) -> None:
+        """Delete a field from a collection schema."""
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        self.request(
+            "DELETE",
+            f"{self._collection_schema_tree(collection_key, version_key)}/field/",
+            params={"path": field_path},
+            parse_json=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Folder schema field operations (deprecated)
+    # ------------------------------------------------------------------ #
+
     def list_folder_fields(
         self,
         folder_key: FolderRef,
@@ -1904,13 +2354,8 @@ class ManagementClient(_ManagementPathsMixin):
         *,
         params: Mapping[str, Any] | None = None,
     ) -> FieldList:
-        """List all fields in a folder schema version.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            params: Optional query parameters for filtering.
-        """
+        """Deprecated alias for :meth:`list_collection_fields`."""
+        warn_deprecated_method("list_folder_fields", "list_collection_fields")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = self.request(
@@ -1926,13 +2371,8 @@ class ManagementClient(_ManagementPathsMixin):
         version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
-        """Add a new field to a folder schema version.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            payload: Field configuration including name and type.
-        """
+        """Deprecated alias for :meth:`create_collection_field`."""
+        warn_deprecated_method("create_folder_field", "create_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = self.request(
@@ -1948,13 +2388,8 @@ class ManagementClient(_ManagementPathsMixin):
         version_key: SchemaVersionRef,
         field_path: str,
     ) -> FieldSummary:
-        """Retrieve details for a specific field in a folder schema.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            field_path: Path to the field (e.g., "title" or "metadata.author").
-        """
+        """Deprecated alias for :meth:`get_collection_field`."""
+        warn_deprecated_method("get_folder_field", "get_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = self.request(
@@ -1971,14 +2406,8 @@ class ManagementClient(_ManagementPathsMixin):
         field_path: str,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
-        """Update a field in a folder schema.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            field_path: Path to the field.
-            payload: Fields to update.
-        """
+        """Deprecated alias for :meth:`update_collection_field`."""
+        warn_deprecated_method("update_folder_field", "update_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = self.request(
@@ -1992,13 +2421,8 @@ class ManagementClient(_ManagementPathsMixin):
     def delete_folder_field(
         self, folder_key: FolderRef, version_key: SchemaVersionRef, field_path: str
     ) -> None:
-        """Delete a field from a folder schema.
-
-        Args:
-            folder_key: Unique identifier of the folder.
-            version_key: Unique identifier of the version.
-            field_path: Path to the field to delete.
-        """
+        """Deprecated alias for :meth:`delete_collection_field`."""
+        warn_deprecated_method("delete_folder_field", "delete_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         self.request(
@@ -2035,7 +2459,6 @@ class ManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        component: ComponentRef | None = None,
         external_id: str | None = None,
     ) -> ResourceSummary:
         """
@@ -2043,21 +2466,17 @@ class ManagementClient(_ManagementPathsMixin):
 
         Args:
             folder_key: Target folder key.
-            payload: JSON payload that matches the folder/component schema.
-            component: Optional component key for component-based folders.
+            payload: JSON payload that matches the folder schema.
             external_id: Optional external identifier for the resource.
         """
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
 
-        params = {"component": component} if component else None
         body: dict[str, Any] = dict(payload)
         if external_id is not None:
             body["external_id"] = external_id
         data = self.request(
             "POST",
             f"{self._resource_base(folder_key)}/",
-            params=params,
             json_body=body,
         )
         return ResourceSummary.model_validate(data)
@@ -2068,7 +2487,6 @@ class ManagementClient(_ManagementPathsMixin):
         payload: Mapping[str, Any],
         *,
         external_id: str,
-        component: ComponentRef | None = None,
     ) -> ResourceSummary:
         """
         Create or update a resource by external_id.
@@ -2079,15 +2497,11 @@ class ManagementClient(_ManagementPathsMixin):
 
         Args:
             folder_key: Target folder key.
-            payload: JSON payload matching the folder/component schema.
+            payload: JSON payload matching the folder schema.
             external_id: External identifier for the resource (required).
-            component: Optional component key for component-based folders.
         """
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
         params: dict[str, str] = {"external_id": external_id}
-        if component:
-            params["component"] = component
         data = self.request(
             "PUT",
             f"{self._resource_base(folder_key)}/",
@@ -2144,7 +2558,6 @@ class ManagementClient(_ManagementPathsMixin):
                     folder_key,
                     item.payload,
                     external_id=item.external_id,
-                    component=item.component,
                 ): (idx, item)
                 for idx, item in enumerate(items)
             }
@@ -2581,9 +2994,108 @@ class AsyncManagementClient(_ManagementPathsMixin):
         api_key = _resolve_key(api_key)
         await self.request("DELETE", f"{self._api_root(api_key)}/", parse_json=False)
 
+    # ------------------------------------------------------------------ #
+    # API ↔ Collection association (canonical)
+    # ------------------------------------------------------------------ #
+
+    async def list_api_collections(
+        self, api_key: APIRef, *, params: Mapping[str, Any] | None = None
+    ) -> APICollectionList:
+        api_key = _resolve_key(api_key)
+        data = await self.request(
+            "GET", f"{self._api_collections_root(api_key)}/", params=params
+        )
+        return APICollectionList.model_validate(data)
+
+    async def add_api_collection(
+        self,
+        api_key: APIRef,
+        collection_key: CollectionRef,
+        *,
+        allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
+    ) -> APICollectionSummary:
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        payload: dict[str, Any] = {"folder": collection_key}
+        if allowed_methods is not None:
+            payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
+        data = await self.request(
+            "POST", f"{self._api_collections_root(api_key)}/", json_body=payload
+        )
+        return APICollectionSummary.model_validate(data)
+
+    async def get_api_collection(
+        self, api_key: APIRef, collection_key: CollectionRef
+    ) -> APICollectionSummary:
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "GET", f"{self._api_collections_root(api_key)}/{collection_key}/"
+        )
+        return APICollectionSummary.model_validate(data)
+
+    async def update_api_collection(
+        self,
+        api_key: APIRef,
+        collection_key: CollectionRef,
+        *,
+        allowed_methods: list[str] | None = None,
+        description_get_one: str | None = None,
+        description_get_many: str | None = None,
+        description_search: str | None = None,
+        description_schema: str | None = None,
+    ) -> APICollectionSummary:
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        payload: dict[str, Any] = {}
+        if allowed_methods is not None:
+            payload["allowed_methods"] = allowed_methods
+        if description_get_one is not None:
+            payload["description_get_one"] = description_get_one
+        if description_get_many is not None:
+            payload["description_get_many"] = description_get_many
+        if description_search is not None:
+            payload["description_search"] = description_search
+        if description_schema is not None:
+            payload["description_schema"] = description_schema
+        data = await self.request(
+            "PUT",
+            f"{self._api_collections_root(api_key)}/{collection_key}/",
+            json_body=payload,
+        )
+        return APICollectionSummary.model_validate(data)
+
+    async def remove_api_collection(
+        self, api_key: APIRef, collection_key: CollectionRef
+    ) -> None:
+        api_key = _resolve_key(api_key)
+        collection_key = _resolve_key(collection_key)
+        await self.request(
+            "DELETE",
+            f"{self._api_collections_root(api_key)}/{collection_key}/",
+            parse_json=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # API ↔ Folder association (deprecated)
+    # ------------------------------------------------------------------ #
+
     async def list_api_folders(
         self, api_key: APIRef, *, params: Mapping[str, Any] | None = None
     ) -> APIFolderList:
+        warn_deprecated_method("list_api_folders", "list_api_collections")
         api_key = _resolve_key(api_key)
         data = await self.request(
             "GET", f"{self._api_folders_root(api_key)}/", params=params
@@ -2601,6 +3113,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         description_search: str | None = None,
         description_schema: str | None = None,
     ) -> APIFolderSummary:
+        warn_deprecated_method("add_api_folder", "add_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {"folder": folder_key}
@@ -2622,6 +3135,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
     async def get_api_folder(
         self, api_key: APIRef, folder_key: FolderRef
     ) -> APIFolderSummary:
+        warn_deprecated_method("get_api_folder", "get_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         data = await self.request(
@@ -2640,6 +3154,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         description_search: str | None = None,
         description_schema: str | None = None,
     ) -> APIFolderSummary:
+        warn_deprecated_method("update_api_folder", "update_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         payload: dict[str, Any] = {}
@@ -2659,6 +3174,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return APIFolderSummary.model_validate(data)
 
     async def remove_api_folder(self, api_key: APIRef, folder_key: FolderRef) -> None:
+        warn_deprecated_method("remove_api_folder", "remove_api_collection")
         api_key = _resolve_key(api_key)
         folder_key = _resolve_key(folder_key)
         await self.request(
@@ -2922,16 +3438,86 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
 
     # ------------------------------------------------------------------ #
-    # Folder operations
+    # Collection operations (canonical)
+    # ------------------------------------------------------------------ #
+
+    async def list_collections(
+        self, *, params: Mapping[str, Any] | None = None
+    ) -> CollectionList:
+        data = await self.request(
+            "GET", f"{self._collections_tree_root()}/", params=params
+        )
+        return CollectionList.model_validate(data)
+
+    async def get_collection(self, collection_key: CollectionRef) -> CollectionSummary:
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "GET", f"{self._collections_tree_item()}/", params={"key": collection_key}
+        )
+        return CollectionSummary.model_validate(data)
+
+    async def get_collection_by_path(self, path: str) -> CollectionSummary:
+        data = await self.request(
+            "GET", f"{self._collections_tree_item()}/", params={"path": path}
+        )
+        return CollectionSummary.model_validate(data)
+
+    async def list_collection_tree(
+        self,
+        *,
+        key: str | None = None,
+        mode: str | None = None,
+    ) -> CollectionList:
+        params: dict[str, Any] = {}
+        if key:
+            params["key"] = key
+        if mode:
+            params["mode"] = mode
+        data = await self.request(
+            "GET", f"{self._collections_tree_root()}/", params=params or None
+        )
+        return CollectionList.model_validate(data)
+
+    async def create_collection(self, payload: Mapping[str, Any]) -> CollectionSummary:
+        data = await self.request(
+            "POST", f"{self._collections_tree_root()}/", json_body=payload
+        )
+        return CollectionSummary.model_validate(data)
+
+    async def update_collection(
+        self, collection_key: CollectionRef, payload: Mapping[str, Any]
+    ) -> CollectionSummary:
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "PUT",
+            f"{self._collections_tree_item()}/",
+            params={"key": collection_key},
+            json_body=payload,
+        )
+        return CollectionSummary.model_validate(data)
+
+    async def delete_collection(self, collection_key: CollectionRef) -> None:
+        collection_key = _resolve_key(collection_key)
+        await self.request(
+            "DELETE",
+            f"{self._collections_tree_item()}/",
+            params={"key": collection_key},
+            parse_json=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Folder operations (deprecated)
     # ------------------------------------------------------------------ #
 
     async def list_folders(
         self, *, params: Mapping[str, Any] | None = None
     ) -> FolderList:
+        warn_deprecated_method("list_folders", "list_collections")
         data = await self.request("GET", f"{self._folders_tree_root()}/", params=params)
         return FolderList.model_validate(data)
 
     async def get_folder(self, folder_key: FolderRef) -> FolderSummary:
+        warn_deprecated_method("get_folder", "get_collection")
         folder_key = _resolve_key(folder_key)
         data = await self.request(
             "GET", f"{self._folders_tree_item()}/", params={"key": folder_key}
@@ -2939,6 +3525,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return FolderSummary.model_validate(data)
 
     async def get_folder_by_path(self, path: str) -> FolderSummary:
+        warn_deprecated_method("get_folder_by_path", "get_collection_by_path")
         data = await self.request(
             "GET",
             f"{self._folders_tree_item()}/",
@@ -2952,6 +3539,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         key: str | None = None,
         mode: str | None = None,
     ) -> FolderList:
+        warn_deprecated_method("list_folder_tree", "list_collection_tree")
         params: dict[str, Any] = {}
         if key:
             params["key"] = key
@@ -2963,6 +3551,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return FolderList.model_validate(data)
 
     async def create_folder(self, payload: Mapping[str, Any]) -> FolderSummary:
+        warn_deprecated_method("create_folder", "create_collection")
         data = await self.request(
             "POST", f"{self._folders_tree_root()}/", json_body=payload
         )
@@ -2971,6 +3560,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
     async def update_folder(
         self, folder_key: FolderRef, payload: Mapping[str, Any]
     ) -> FolderSummary:
+        warn_deprecated_method("update_folder", "update_collection")
         folder_key = _resolve_key(folder_key)
         data = await self.request(
             "PUT",
@@ -2981,6 +3571,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         return FolderSummary.model_validate(data)
 
     async def delete_folder(self, folder_key: FolderRef) -> None:
+        warn_deprecated_method("delete_folder", "delete_collection")
         folder_key = _resolve_key(folder_key)
         await self.request(
             "DELETE",
@@ -3195,12 +3786,223 @@ class AsyncManagementClient(_ManagementPathsMixin):
             parse_json=False,
         )
 
+    # ------------------------------------------------------------------ #
+    # Collection schema version operations (canonical)
+    # ------------------------------------------------------------------ #
+
+    async def list_collection_versions(
+        self,
+        collection_key: CollectionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> SchemaVersionList:
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "GET",
+            f"{self._collection_versions_base(collection_key)}/",
+            params=params,
+        )
+        return SchemaVersionList.model_validate(data)
+
+    async def create_collection_version(
+        self,
+        collection_key: CollectionRef,
+        payload: Mapping[str, Any],
+        *,
+        copy_from: SchemaVersionRef | None = None,
+    ) -> SchemaVersionSummary:
+        collection_key = _resolve_key(collection_key)
+        copy_from = _resolve_key(copy_from) if copy_from is not None else None
+        params = {"copy_from": copy_from} if copy_from else None
+        data = await self.request(
+            "POST",
+            f"{self._collection_versions_base(collection_key)}/",
+            params=params,
+            json_body=payload,
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    async def get_collection_version(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        *,
+        include_schema: bool | None = None,
+    ) -> SchemaVersionSummary:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        params = (
+            {"include_schema": str(include_schema).lower()}
+            if include_schema is not None
+            else None
+        )
+        data = await self.request(
+            "GET",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/",
+            params=params,
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    async def update_collection_version(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        payload: Mapping[str, Any],
+    ) -> SchemaVersionSummary:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = await self.request(
+            "PUT",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/",
+            json_body=payload,
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    async def delete_collection_version(
+        self, collection_key: CollectionRef, version_key: SchemaVersionRef
+    ) -> None:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        await self.request(
+            "DELETE",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/",
+            parse_json=False,
+        )
+
+    async def publish_collection_version(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+    ) -> SchemaVersionSummary:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = await self.request(
+            "POST",
+            f"{self._collection_versions_base(collection_key)}/{version_key}/publish/",
+        )
+        return SchemaVersionSummary.model_validate(data)
+
+    async def sync_collection_component(
+        self,
+        collection_key: CollectionRef,
+        *,
+        field_paths: Sequence[str] | None = None,
+        to_versions: Mapping[str, str] | None = None,
+    ) -> SyncComponentResponse:
+        """Async sibling of :meth:`ManagementClient.sync_collection_component`."""
+        collection_key = _resolve_key(collection_key)
+        if field_paths is not None and to_versions:
+            extras = set(to_versions.keys()) - set(field_paths)
+            if extras:
+                raise ValueError(
+                    "to_versions includes paths not present in field_paths: "
+                    f"{sorted(extras)}"
+                )
+        body: dict[str, Any] = {}
+        if field_paths is not None:
+            body["field_paths"] = list(field_paths)
+        if to_versions is not None:
+            body["to_versions"] = dict(to_versions)
+        data = await self.request(
+            "POST",
+            f"{self._collection_sync_component(collection_key)}/",
+            json_body=body,
+        )
+        return SyncComponentResponse.model_validate(data)
+
+    # ------------------------------------------------------------------ #
+    # Collection schema field operations (canonical)
+    # ------------------------------------------------------------------ #
+
+    async def list_collection_fields(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> FieldList:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = await self.request(
+            "GET",
+            f"{self._collection_schema_tree(collection_key, version_key)}/",
+            params=params,
+        )
+        return FieldList.model_validate(data)
+
+    async def create_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        payload: Mapping[str, Any],
+    ) -> FieldSummary:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = await self.request(
+            "POST",
+            f"{self._collection_schema_tree(collection_key, version_key)}/",
+            json_body=payload,
+        )
+        return FieldSummary.model_validate(data)
+
+    async def get_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
+    ) -> FieldSummary:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = await self.request(
+            "GET",
+            f"{self._collection_schema_tree(collection_key, version_key)}/field/",
+            params={"path": field_path},
+        )
+        return FieldSummary.model_validate(data)
+
+    async def update_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
+        payload: Mapping[str, Any],
+    ) -> FieldSummary:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        data = await self.request(
+            "PUT",
+            f"{self._collection_schema_tree(collection_key, version_key)}/field/",
+            params={"path": field_path},
+            json_body=payload,
+        )
+        return FieldSummary.model_validate(data)
+
+    async def delete_collection_field(
+        self,
+        collection_key: CollectionRef,
+        version_key: SchemaVersionRef,
+        field_path: str,
+    ) -> None:
+        collection_key = _resolve_key(collection_key)
+        version_key = _resolve_key(version_key)
+        await self.request(
+            "DELETE",
+            f"{self._collection_schema_tree(collection_key, version_key)}/field/",
+            params={"path": field_path},
+            parse_json=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Folder schema version operations (deprecated)
+    # ------------------------------------------------------------------ #
+
     async def list_folder_versions(
         self,
         folder_key: FolderRef,
         *,
         params: Mapping[str, Any] | None = None,
     ) -> SchemaVersionList:
+        warn_deprecated_method("list_folder_versions", "list_collection_versions")
         folder_key = _resolve_key(folder_key)
         data = await self.request(
             "GET", f"{self._folder_versions_base(folder_key)}/", params=params
@@ -3214,6 +4016,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         *,
         copy_from: SchemaVersionRef | None = None,
     ) -> SchemaVersionSummary:
+        warn_deprecated_method("create_folder_version", "create_collection_version")
         folder_key = _resolve_key(folder_key)
         copy_from = _resolve_key(copy_from) if copy_from is not None else None
         params = {"copy_from": copy_from} if copy_from else None
@@ -3232,6 +4035,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         *,
         include_schema: bool | None = None,
     ) -> SchemaVersionSummary:
+        warn_deprecated_method("get_folder_version", "get_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         params = (
@@ -3252,6 +4056,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> SchemaVersionSummary:
+        warn_deprecated_method("update_folder_version", "update_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = await self.request(
@@ -3264,6 +4069,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
     async def delete_folder_version(
         self, folder_key: FolderRef, version_key: SchemaVersionRef
     ) -> None:
+        warn_deprecated_method("delete_folder_version", "delete_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         await self.request(
@@ -3277,6 +4083,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         version_key: SchemaVersionRef,
     ) -> SchemaVersionSummary:
+        warn_deprecated_method("publish_folder_version", "publish_collection_version")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = await self.request(
@@ -3285,6 +4092,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return SchemaVersionSummary.model_validate(data)
 
+    # ------------------------------------------------------------------ #
+    # Folder schema field operations (deprecated)
+    # ------------------------------------------------------------------ #
+
     async def list_folder_fields(
         self,
         folder_key: FolderRef,
@@ -3292,6 +4103,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         *,
         params: Mapping[str, Any] | None = None,
     ) -> FieldList:
+        warn_deprecated_method("list_folder_fields", "list_collection_fields")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = await self.request(
@@ -3307,6 +4119,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         version_key: SchemaVersionRef,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
+        warn_deprecated_method("create_folder_field", "create_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = await self.request(
@@ -3322,6 +4135,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         version_key: SchemaVersionRef,
         field_path: str,
     ) -> FieldSummary:
+        warn_deprecated_method("get_folder_field", "get_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = await self.request(
@@ -3338,6 +4152,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         field_path: str,
         payload: Mapping[str, Any],
     ) -> FieldSummary:
+        warn_deprecated_method("update_folder_field", "update_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         data = await self.request(
@@ -3351,6 +4166,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
     async def delete_folder_field(
         self, folder_key: FolderRef, version_key: SchemaVersionRef, field_path: str
     ) -> None:
+        warn_deprecated_method("delete_folder_field", "delete_collection_field")
         folder_key = _resolve_key(folder_key)
         version_key = _resolve_key(version_key)
         await self.request(
@@ -3579,19 +4395,15 @@ class AsyncManagementClient(_ManagementPathsMixin):
         folder_key: FolderRef,
         payload: Mapping[str, Any],
         *,
-        component: ComponentRef | None = None,
         external_id: str | None = None,
     ) -> ResourceSummary:
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
-        params = {"component": component} if component else None
         body: dict[str, Any] = dict(payload)
         if external_id is not None:
             body["external_id"] = external_id
         data = await self.request(
             "POST",
             f"{self._resource_base(folder_key)}/",
-            params=params,
             json_body=body,
         )
         return ResourceSummary.model_validate(data)
@@ -3602,7 +4414,6 @@ class AsyncManagementClient(_ManagementPathsMixin):
         payload: Mapping[str, Any],
         *,
         external_id: str,
-        component: ComponentRef | None = None,
     ) -> ResourceSummary:
         """
         Create or update a resource by external_id.
@@ -3613,15 +4424,11 @@ class AsyncManagementClient(_ManagementPathsMixin):
 
         Args:
             folder_key: Target folder key.
-            payload: JSON payload matching the folder/component schema.
+            payload: JSON payload matching the folder schema.
             external_id: External identifier for the resource (required).
-            component: Optional component key for component-based folders.
         """
         folder_key = _resolve_key(folder_key)
-        component = _resolve_key(component) if component is not None else None
         params: dict[str, str] = {"external_id": external_id}
-        if component:
-            params["component"] = component
         data = await self.request(
             "PUT",
             f"{self._resource_base(folder_key)}/",
@@ -3681,7 +4488,6 @@ class AsyncManagementClient(_ManagementPathsMixin):
                         folder_key,
                         item.payload,
                         external_id=item.external_id,
-                        component=item.component,
                     )
                     succeeded.append(result)
                 except Exception as exc:

@@ -3,6 +3,7 @@
 from .client import (
     APIRef,
     AsyncManagementClient,
+    CollectionRef,
     ComponentRef,
     EnvironmentRef,
     FluxAPIKeyRef,
@@ -18,13 +19,21 @@ from .client import (
     SchemaVersionRef,
 )
 from .models import (
+    APICollectionList,
+    APICollectionSummary,
     BatchItemError,
     BatchUpsertItem,
     BatchUpsertResult,
+    CollectionList,
+    CollectionSummary,
+    ComponentSyncConflictDetail,
+    NestedFieldMeta,
     ResourceList,
     ResourceSummary,
     RevisionList,
     RevisionSummary,
+    SyncComponentResponse,
+    SyncComponentSkippedItem,
 )
 
 __all__ = [
@@ -38,6 +47,11 @@ __all__ = [
     "BatchItemError",
     "BatchUpsertResult",
     "FolderRef",
+    "CollectionRef",
+    "CollectionSummary",
+    "CollectionList",
+    "APICollectionSummary",
+    "APICollectionList",
     "ResourceRef",
     "RevisionRef",
     "ComponentRef",
@@ -50,4 +64,8 @@ __all__ = [
     "ManagementAPIKeyRef",
     "FluxAPIKeyRef",
     "APIRef",
+    "NestedFieldMeta",
+    "SyncComponentResponse",
+    "SyncComponentSkippedItem",
+    "ComponentSyncConflictDetail",
 ]

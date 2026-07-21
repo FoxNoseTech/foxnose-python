@@ -453,7 +453,6 @@ client.upsert_management_role_permission(
     {
         "content_type": "resources",
         "actions": ["read", "create", "update"],
-        "all_objects": True,
     },
 )
 ```

@@ -18,6 +18,10 @@ from .errors import (
     FoxnoseAuthError,
     FoxnoseError,
     FoxnoseTransportError,
+    PlanExhausted,
+    PlanLimitExceeded,
+    RateLimitExceeded,
+    SpendCapExceeded,
 )
 from .flux.client import AsyncFluxClient, FluxClient
 from .flux.models import (
@@ -31,6 +35,7 @@ from .flux.models import (
 from .management.client import (
     APIRef,
     AsyncManagementClient,
+    CollectionRef,
     ComponentRef,
     EnvironmentRef,
     FluxAPIKeyRef,
@@ -46,11 +51,16 @@ from .management.client import (
     SchemaVersionRef,
 )
 from .management.models import (
+    APICollectionList,
+    APICollectionSummary,
     BatchItemError,
     BatchUpsertItem,
     BatchUpsertResult,
+    CollectionList,
+    CollectionSummary,
     ComponentList,
     ComponentSummary,
+    ComponentSyncConflictDetail,
     EnvironmentList,
     EnvironmentSummary,
     FieldList,
@@ -67,6 +77,7 @@ from .management.models import (
     FluxRoleSummary,
     LocaleList,
     LocaleSummary,
+    NestedFieldMeta,
     OrganizationList,
     OrganizationOwner,
     OrganizationPlanStatus,
@@ -86,6 +97,8 @@ from .management.models import (
     RevisionSummary,
     SchemaVersionList,
     SchemaVersionSummary,
+    SyncComponentResponse,
+    SyncComponentSkippedItem,
 )
 
 __all__ = [
@@ -103,6 +116,10 @@ __all__ = [
     "FoxnoseAPIError",
     "FoxnoseAuthError",
     "FoxnoseTransportError",
+    "SpendCapExceeded",
+    "PlanExhausted",
+    "PlanLimitExceeded",
+    "RateLimitExceeded",
     "ManagementClient",
     "AsyncManagementClient",
     "FluxClient",
@@ -116,8 +133,16 @@ __all__ = [
     "BatchUpsertResult",
     "FolderSummary",
     "FolderList",
+    "CollectionSummary",
+    "CollectionList",
+    "APICollectionSummary",
+    "APICollectionList",
     "ComponentSummary",
     "ComponentList",
+    "ComponentSyncConflictDetail",
+    "NestedFieldMeta",
+    "SyncComponentResponse",
+    "SyncComponentSkippedItem",
     "SchemaVersionSummary",
     "SchemaVersionList",
     "FieldSummary",
@@ -148,6 +173,7 @@ __all__ = [
     "RolePermissionObject",
     "UserReference",
     "FolderRef",
+    "CollectionRef",
     "ResourceRef",
     "RevisionRef",
     "ComponentRef",
@@ -168,4 +194,4 @@ __all__ = [
     "SearchRequest",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

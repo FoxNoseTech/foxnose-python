@@ -33,6 +33,7 @@ from foxnose_sdk.management.models import (
     FolderSummary,
     ResourceSummary,
     RevisionSummary,
+    RolePermission,
 )
 
 ORG_KEY = "org-1"
@@ -93,7 +94,6 @@ RESOURCE_JSON = {
     "created_at": "2024-01-10T00:00:00Z",
     "vectors_size": 0,
     "name": None,
-    "component": None,
     "resource_owner": None,
     "current_revision": "rev-1",
     "external_id": None,
@@ -286,13 +286,13 @@ MANAGEMENT_ROLE_JSON = {
 }
 
 ROLE_PERMISSION_JSON = {
-    "content_type": "resources",
-    "actions": ["read", "update"],
+    "content_type": "collection-items",
+    "actions": ["read"],
     "all_objects": True,
 }
 
 PERMISSION_OBJECT_JSON = {
-    "content_type": "folder-items",
+    "content_type": "collection-items",
     "object_key": "folder-1",
 }
 
@@ -599,8 +599,11 @@ def test_management_api_key_lifecycle():
     keys = client.list_management_api_keys()
     assert keys.results[0].public_key == "manage_pub_abc"
 
-    created = client.create_management_api_key({"description": "Ops key"})
+    created = client.create_management_api_key(
+        {"description": "Ops key", "role": "role-1"}
+    )
     assert created.secret_key == "manage_sec_xyz"
+    assert captured["bodies"][0] == {"description": "Ops key", "role": "role-1"}
 
     detail = client.get_management_api_key("api-key-1")
     assert detail.key == "api-key-1"
@@ -644,8 +647,9 @@ def test_flux_api_key_lifecycle():
     keys = client.list_flux_api_keys()
     assert keys.results[0].public_key == "flux_pub_abc"
 
-    created = client.create_flux_api_key({"description": "Flux key"})
+    created = client.create_flux_api_key({"description": "Flux key", "role": "role-1"})
     assert created.secret_key == "flux_sec_xyz"
+    assert captured["bodies"][0] == {"description": "Flux key", "role": "role-1"}
 
     detail = client.get_flux_api_key("flux-key-1")
     assert detail.key == "flux-key-1"
@@ -749,12 +753,12 @@ def test_management_role_permissions_workflow():
 
     client = build_management_client(handler)
     permissions = client.list_management_role_permissions("role-1")
-    assert permissions[0].content_type == "resources"
+    assert permissions[0].content_type == "collection-items"
 
     created = client.upsert_management_role_permission("role-1", ROLE_PERMISSION_JSON)
-    assert created.actions == ["read", "update"]
+    assert created.actions == ["read"]
 
-    client.delete_management_role_permission("role-1", "resources")
+    client.delete_management_role_permission("role-1", "collection-items")
 
     replaced = client.replace_management_role_permissions(
         "role-1", [ROLE_PERMISSION_JSON]
@@ -762,21 +766,75 @@ def test_management_role_permissions_workflow():
     assert replaced[0].all_objects is True
 
     objects = client.list_management_permission_objects(
-        "role-1", content_type="folder-items"
+        "role-1", content_type="collection-items"
     )
     assert objects[0].object_key == "folder-1"
 
     added = client.add_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
-    assert added.content_type == "folder-items"
+    assert added.content_type == "collection-items"
     assert added.object_key == "folder-1"
 
     client.delete_management_permission_object("role-1", PERMISSION_OBJECT_JSON)
 
     assert any("/permissions/batch/" in path for _, path in recorded)
     assert any(
-        body.get("content_type") == "folder-items"
+        body.get("content_type") == "collection-items"
         for body in bodies
         if isinstance(body, dict)
+    )
+
+
+def test_upsert_management_role_permission_serializes_wire_shape():
+    """The request body is forwarded verbatim: object-based grants carry
+    ``all_objects``, non-object-based grants omit it entirely."""
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        bodies.append(body)
+        return httpx.Response(201, json=body)
+
+    client = build_management_client(handler)
+
+    structure = client.upsert_management_role_permission(
+        "role-1", {"content_type": "collection-structure", "actions": ["read"]}
+    )
+    items = client.upsert_management_role_permission(
+        "role-1",
+        {"content_type": "collection-items", "actions": ["read"], "all_objects": True},
+    )
+
+    assert bodies[0] == {"content_type": "collection-structure", "actions": ["read"]}
+    assert "all_objects" not in bodies[0]
+    assert bodies[1] == {
+        "content_type": "collection-items",
+        "actions": ["read"],
+        "all_objects": True,
+    }
+
+    # Non-object-based permissions come back with all_objects unset.
+    assert structure.all_objects is None
+    assert items.all_objects is True
+
+
+def test_role_permission_accepts_null_all_objects():
+    """Non-object-based content types return ``all_objects: null``; the model
+    must parse that instead of requiring a boolean."""
+    assert (
+        RolePermission.model_validate(
+            {"content_type": "collection-structure", "actions": ["read"]}
+        ).all_objects
+        is None
+    )
+    assert (
+        RolePermission.model_validate(
+            {
+                "content_type": "collection-structure",
+                "actions": ["read"],
+                "all_objects": None,
+            }
+        ).all_objects
+        is None
     )
 
 
@@ -963,23 +1021,6 @@ def test_list_resources_returns_model():
     assert captured["path"] == "/v1/env123/folders/folder-1/resources/"
 
 
-def test_create_resource_supports_component_param():
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content.decode())
-        return httpx.Response(201, json=RESOURCE_JSON)
-
-    client = build_management_client(handler)
-    result = client.create_resource(
-        "folder-1", {"data": {"title": "Hello"}}, component="comp-1"
-    )
-    assert result.key == "resource-1"
-    assert "component=comp-1" in captured["url"]
-    assert captured["body"]["data"]["title"] == "Hello"
-
-
 def test_create_resource_with_external_id():
     captured = {}
 
@@ -999,27 +1040,6 @@ def test_create_resource_with_external_id():
     assert captured["body"]["data"]["title"] == "Hello"
     # external_id goes in the body, not in query params
     assert "external_id=" not in captured["url"]
-
-
-def test_create_resource_with_component_and_external_id():
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content.decode())
-        resource_json = {**RESOURCE_JSON, "external_id": "ext-1", "component": "comp-1"}
-        return httpx.Response(201, json=resource_json)
-
-    client = build_management_client(handler)
-    result = client.create_resource(
-        "folder-1",
-        {"data": {"title": "Hello"}},
-        component="comp-1",
-        external_id="ext-1",
-    )
-    assert result.key == "resource-1"
-    assert "component=comp-1" in captured["url"]
-    assert captured["body"]["external_id"] == "ext-1"
 
 
 def test_upsert_resource_sends_put_with_external_id():
@@ -1043,29 +1063,6 @@ def test_upsert_resource_sends_put_with_external_id():
     assert captured["body"]["data"]["title"] == "Upserted"
     assert result.key == "resource-1"
     assert result.external_id == "my-ext-id"
-
-
-def test_upsert_resource_with_component():
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["method"] = request.method
-        resource_json = {**RESOURCE_JSON, "external_id": "ext-2", "component": "comp-1"}
-        return httpx.Response(201, json=resource_json)
-
-    client = build_management_client(handler)
-    result = client.upsert_resource(
-        "folder-1",
-        {"data": {"title": "New"}},
-        external_id="ext-2",
-        component="comp-1",
-    )
-    assert captured["method"] == "PUT"
-    assert "external_id=ext-2" in captured["url"]
-    assert "component=comp-1" in captured["url"]
-    assert result.external_id == "ext-2"
-    assert result.component == "comp-1"
 
 
 def test_create_resource_without_external_id_omits_field_from_body():
@@ -1309,26 +1306,6 @@ def test_batch_upsert_resources_progress_callback():
     # Completed counts should cover 1, 2, 3
     completed_values = sorted(done for done, _ in progress_calls)
     assert completed_values == [1, 2, 3]
-
-
-def test_batch_upsert_resources_with_component():
-    captured: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.append(str(request.url))
-        ext_id = str(request.url).split("external_id=")[1].split("&")[0]
-        return httpx.Response(200, json={**RESOURCE_JSON, "external_id": ext_id})
-
-    client = build_management_client(handler)
-    items = [
-        BatchUpsertItem(
-            external_id="ext-1", payload={"title": "Item"}, component="comp-1"
-        )
-    ]
-    result = client.batch_upsert_resources("folder-1", items)
-    assert result.success_count == 1
-    assert "component=comp-1" in captured[0]
-    assert "external_id=ext-1" in captured[0]
 
 
 def test_batch_upsert_resources_rejects_zero_concurrency():

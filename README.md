@@ -49,13 +49,19 @@ client = ManagementClient(
     auth=JWTAuth.from_static_token("YOUR_ACCESS_TOKEN"),
 )
 
-# List folders
-folders = client.list_folders()
-for folder in folders.results:
-    print(f"{folder.name} ({folder.key})")
+# List collections
+collections = client.list_collections()
+for collection in collections.results:
+    print(f"{collection.name} ({collection.key})")
 
 client.close()
 ```
+
+> **Note (0.6.0):** Folder-named methods (`list_folders`, `create_folder`, `add_api_folder`,
+> `list_folder_versions`, `list_folder_fields`, etc.) remain as deprecated aliases that
+> emit a one-shot `DeprecationWarning` on first use per process. They keep their
+> original wire behaviour (hitting the legacy `/folders/...` URL alias on the server)
+> and will be removed in **1.0**. Prefer the `*_collection*` names in new code.
 
 ### Async Client
 
@@ -69,9 +75,97 @@ async def main():
         auth=JWTAuth.from_static_token("YOUR_ACCESS_TOKEN"),
     )
 
-    folders = await client.list_folders()
+    collections = await client.list_collections()
     await client.aclose()
 ```
+
+### Components on Collections
+
+Collections can embed Components as nested fields with explicit pin
+semantics (`component`, `component_version`, `auto_update`). The
+`NestedFieldMeta` helper builds the `meta` block for you, and
+`sync_collection_component` advances pinned fields to a target Component
+version on demand.
+
+```python
+from foxnose_sdk import (
+    ManagementClient,
+    FoxnoseConfig,
+    NestedFieldMeta,
+)
+from foxnose_sdk.auth import JWTAuth
+
+client = ManagementClient(
+    FoxnoseConfig(base_url="https://api.foxnose.com"),
+    environment_key="prod",
+    auth=JWTAuth("ACCESS_TOKEN"),
+)
+
+# Embed a Component as a pinned nested field on a Collection draft.
+client.create_collection_field(
+    "articles",
+    "v2-draft",
+    {
+        "key": "seo",
+        "name": "SEO",
+        "type": "nested",
+        "required": True,
+        "meta": NestedFieldMeta(
+            component="cmp-seo-metadata",
+            component_version="ver-abc12345",
+            auto_update=False,  # default — pin until explicit sync
+        ).to_meta(),
+    },
+)
+
+# Later, advance every pinned nested field to its Component's current
+# version (empty body = sync all pinned).
+result = client.sync_collection_component("articles")
+print(result.synced_paths, result.schema_version)
+
+# Advance specific paths to a chosen Component version.
+result = client.sync_collection_component(
+    "articles",
+    field_paths=["seo"],
+    to_versions={"seo": "ver-def67890"},
+)
+```
+
+`sync_collection_component` returns a `SyncComponentResponse` with
+`synced_paths`, `skipped` (per-path reasons), and `schema_version` (UID
+of the newly published Collection schema version, or `None` if no field
+needed advancing). On compatibility conflict the server returns 409
+`component_sync_conflict`; quota exhaustion returns 422
+`too_many_versions`. Both surface as `FoxnoseAPIError`.
+
+### Handling billing errors
+
+Billing and quota responses raise typed subclasses of `FoxnoseAPIError`, so
+existing `except FoxnoseAPIError` handlers keep working while new code can read
+the typed attributes:
+
+```python
+from foxnose_sdk import (
+    SpendCapExceeded,
+    PlanExhausted,
+    PlanLimitExceeded,
+    RateLimitExceeded,
+)
+
+try:
+    client.create_collection({"name": "Blog"})
+except SpendCapExceeded as e:  # HTTP 402
+    print(f"Spend cap {e.cap_usd}; resets at {e.cycle_resets_at}: {e.raise_cap_url}")
+except PlanExhausted as e:  # HTTP 402
+    print(f"Allowance for {e.axis} exhausted; resets at {e.window_resets_at}")
+except PlanLimitExceeded as e:  # HTTP 403
+    print(f"{e.entity}: {e.current}/{e.limit}. Upgrade: {e.upgrade_url}")
+except RateLimitExceeded as e:  # HTTP 429
+    print(f"Rate limited; retry after {e.retry_after}s")
+```
+
+All four subclass `FoxnoseAPIError`, so a single `except FoxnoseAPIError` still
+catches them if you don't need the typed fields.
 
 ### Flux Client
 

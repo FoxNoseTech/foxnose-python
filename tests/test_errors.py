@@ -13,6 +13,7 @@ from foxnose_sdk.errors import (
     PlanLimitExceeded,
     RateLimitExceeded,
     SpendCapExceeded,
+    _header_lookup,
 )
 from foxnose_sdk.http import HttpTransport
 
@@ -227,6 +228,32 @@ def test_429_rate_limited_on_get_retried_then_raises():
     with pytest.raises(RateLimitExceeded):
         transport.request("GET", "/v1/test")
     assert attempts["count"] == 3
+
+
+def test_429_rate_limited_malformed_retry_after():
+    """A non-numeric Retry-After header parses to retry_after=None, not an error."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            json={"error_code": "rate_limited", "message": "Rate limit exceeded"},
+            headers={"Retry-After": "not-a-number"},
+        )
+
+    transport = _transport(handler, retry_config=RetryConfig(attempts=1, backoff_factor=0))
+    with pytest.raises(RateLimitExceeded) as exc:
+        transport.request("POST", "/v1/test", json_body={"data": "x"})
+    assert exc.value.retry_after is None
+
+
+def test_header_lookup_edge_cases():
+    # No headers at all.
+    assert _header_lookup(None, "Retry-After") is None
+    assert _header_lookup({}, "Retry-After") is None
+    # Present headers but the target is absent.
+    assert _header_lookup({"Content-Type": "application/json"}, "Retry-After") is None
+    # Case-insensitive match.
+    assert _header_lookup({"retry-after": "5"}, "Retry-After") == "5"
 
 
 def test_429_unknown_code_stays_generic():

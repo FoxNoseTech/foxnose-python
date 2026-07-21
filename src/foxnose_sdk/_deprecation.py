@@ -10,7 +10,9 @@ import warnings
 _warned: set[str] = set()
 
 
-def warn_deprecated_method(old_name: str, new_name: str, *, removal: str = "1.0") -> None:
+def warn_deprecated_method(
+    old_name: str, new_name: str, *, removal: str = "1.0"
+) -> None:
     """Emit a :class:`DeprecationWarning` at most once per process per ``old_name``.
 
     Args:

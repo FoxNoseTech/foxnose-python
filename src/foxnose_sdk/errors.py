@@ -98,9 +98,7 @@ class FoxnoseTransportError(FoxnoseError):
     """Raised when the HTTP layer fails before receiving a response."""
 
 
-def _header_lookup(
-    headers: Mapping[str, str] | None, name: str
-) -> str | None:
+def _header_lookup(headers: Mapping[str, str] | None, name: str) -> str | None:
     """Case-insensitively read a header value (httpx lowercases header names)."""
     if not headers:
         return None

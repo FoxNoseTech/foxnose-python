@@ -48,7 +48,6 @@ from .models import (
     ProjectList,
     ProjectSummary,
     RegionInfo,
-    NestedFieldMeta,
     ResourceList,
     ResourceSummary,
     RevisionList,
@@ -1197,9 +1196,7 @@ class ManagementClient(_ManagementPathsMixin):
         Args:
             params: Optional query parameters for filtering/pagination.
         """
-        data = self.request(
-            "GET", f"{self._collections_tree_root()}/", params=params
-        )
+        data = self.request("GET", f"{self._collections_tree_root()}/", params=params)
         return CollectionList.model_validate(data)
 
     def get_collection(self, collection_key: CollectionRef) -> CollectionSummary:
@@ -3452,9 +3449,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return CollectionList.model_validate(data)
 
-    async def get_collection(
-        self, collection_key: CollectionRef
-    ) -> CollectionSummary:
+    async def get_collection(self, collection_key: CollectionRef) -> CollectionSummary:
         collection_key = _resolve_key(collection_key)
         data = await self.request(
             "GET", f"{self._collections_tree_item()}/", params={"key": collection_key}
@@ -3483,9 +3478,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return CollectionList.model_validate(data)
 
-    async def create_collection(
-        self, payload: Mapping[str, Any]
-    ) -> CollectionSummary:
+    async def create_collection(self, payload: Mapping[str, Any]) -> CollectionSummary:
         data = await self.request(
             "POST", f"{self._collections_tree_root()}/", json_body=payload
         )
@@ -3520,9 +3513,7 @@ class AsyncManagementClient(_ManagementPathsMixin):
         self, *, params: Mapping[str, Any] | None = None
     ) -> FolderList:
         warn_deprecated_method("list_folders", "list_collections")
-        data = await self.request(
-            "GET", f"{self._folders_tree_root()}/", params=params
-        )
+        data = await self.request("GET", f"{self._folders_tree_root()}/", params=params)
         return FolderList.model_validate(data)
 
     async def get_folder(self, folder_key: FolderRef) -> FolderSummary:

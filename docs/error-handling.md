@@ -63,6 +63,41 @@ except RateLimitExceeded as e:
 `upgrade_url` on `PlanLimitExceeded` may be `None` for entities that have a hard
 ceiling with no higher tier.
 
+### Write errors
+
+Resource writes (`create_resource` / `update_resource`) can raise these typed
+subclasses of `FoxnoseAPIError`:
+
+| Exception | Status / code | Notes |
+|-----------|---------------|-------|
+| `CollectionNotWritable` | 403 `collection_not_writable` | The collection does not accept writes, or the key lacks write access. |
+| `ExternalIdConflict` | 409 `external_id_conflict` | The supplied `key` already identifies a resource. |
+| `ContentValidationFailed` | 422 `content_validation_failed` | Exposes `errors` (each with a `json_path`) and `errors_truncated`. |
+| `UpstreamError` | 502 `upstream_error` | The write's outcome is unknown — verify with a GET before retrying. |
+
+```python
+from foxnose_sdk import (
+    CollectionNotWritable,
+    ExternalIdConflict,
+    ContentValidationFailed,
+    UpstreamError,
+)
+
+try:
+    client.create_resource("blog-posts", {"title": "Hi"}, key="ext-1")
+except ExternalIdConflict:
+    print("A resource with that key already exists")
+except ContentValidationFailed as e:
+    for problem in e.errors:
+        print(problem["json_path"], problem.get("message"))
+except CollectionNotWritable:
+    print("This key cannot write to that collection")
+except UpstreamError:
+    print("Outcome unknown — re-read with a GET before retrying")
+```
+
+Writes are never retried automatically (they are not idempotent).
+
 ## Common Error Codes
 
 ### 400 Bad Request

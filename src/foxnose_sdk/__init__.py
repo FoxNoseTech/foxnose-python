@@ -2,6 +2,7 @@
 FoxNose Python SDK exposing Management and Flux clients plus shared tooling.
 """
 
+from ._version import __version__
 from .auth import (
     AnonymousAuth,
     AuthStrategy,
@@ -14,6 +15,9 @@ from .auth import (
 )
 from .config import FoxnoseConfig, RetryConfig
 from .errors import (
+    CollectionNotWritable,
+    ContentValidationFailed,
+    ExternalIdConflict,
     FoxnoseAPIError,
     FoxnoseAuthError,
     FoxnoseError,
@@ -22,6 +26,7 @@ from .errors import (
     PlanLimitExceeded,
     RateLimitExceeded,
     SpendCapExceeded,
+    UpstreamError,
 )
 from .flux.client import AsyncFluxClient, FluxClient
 from .flux.models import (
@@ -102,6 +107,7 @@ from .management.models import (
 )
 
 __all__ = [
+    "__version__",
     "AnonymousAuth",
     "AuthStrategy",
     "JWTAuth",
@@ -120,6 +126,10 @@ __all__ = [
     "PlanExhausted",
     "PlanLimitExceeded",
     "RateLimitExceeded",
+    "CollectionNotWritable",
+    "ExternalIdConflict",
+    "ContentValidationFailed",
+    "UpstreamError",
     "ManagementClient",
     "AsyncManagementClient",
     "FluxClient",
@@ -193,5 +203,3 @@ __all__ = [
     "HybridConfig",
     "SearchRequest",
 ]
-
-__version__ = "0.6.0"

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-22
+
+### Added
+
+- **Flux write methods** on `FluxClient` and `AsyncFluxClient`:
+  - `create_resource(folder_path, data, *, key=None)` — create and immediately publish a resource; optional `key` is an external deduplication identifier. Returns `resource_key`, `revision_key`, `write_units`, `published`.
+  - `update_resource(folder_path, resource_key, data)` — full-document replace that publishes a new revision.
+  - Both work with nested collection paths (e.g. `users/usr_1/memories`), require a write-capable key, and are never retried automatically.
+- **Typed write exceptions** in `foxnose_sdk.errors`, all subclasses of `FoxnoseAPIError`:
+  - `CollectionNotWritable` (HTTP 403 `collection_not_writable`)
+  - `ExternalIdConflict` (HTTP 409 `external_id_conflict`)
+  - `ContentValidationFailed` (HTTP 422 `content_validation_failed`) — attrs `errors` (each with a `json_path`) and `errors_truncated`
+  - `UpstreamError` (HTTP 502 `upstream_error`) — a write whose outcome is unknown; verify with a GET before retrying
+- All four are exported from the package root and caught by `except FoxnoseAPIError`.
+
+### Changed
+
+- `UsageBreakdown` now exposes `projects`, `resources`, and `users`.
+
 ## [0.6.0] - 2026-07-16
 
 ### Added

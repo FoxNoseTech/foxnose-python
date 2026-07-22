@@ -52,5 +52,13 @@ def test_top_level_package_reexports_collection_types():
 
 
 def test_version_string_matches_pyproject():
-    """Drift check between pyproject.toml and __version__."""
-    assert foxnose_sdk.__version__ == "0.6.0"
+    """Pin the declared package version (single-sourced from _version.py, which
+    the build backend also reads for the distribution version)."""
+    assert foxnose_sdk.__version__ == "0.7.0"
+
+
+def test_user_agent_tracks_version():
+    """The default User-Agent must always report the real SDK version."""
+    from foxnose_sdk.config import DEFAULT_USER_AGENT
+
+    assert DEFAULT_USER_AGENT == f"foxnose-sdk/{foxnose_sdk.__version__}"

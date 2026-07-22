@@ -105,6 +105,70 @@ class FluxClient:
         path = self._build_path(folder_path, suffix="/_search")
         return self._transport.request("POST", path, json_body=body)
 
+    def create_resource(
+        self,
+        folder_path: str,
+        data: Mapping[str, Any],
+        *,
+        key: str | None = None,
+    ) -> Any:
+        """Create a resource in a collection and publish it immediately.
+
+        Args:
+            folder_path: Collection path, e.g. ``"articles"`` or a nested path
+                such as ``"users/usr_1/memories"``.
+            data: The resource document (a JSON object).
+            key: Optional external identifier for deduplication. Reusing a key
+                that already exists raises :class:`ExternalIdConflict`.
+
+        Returns:
+            The parsed response mapping with ``resource_key``, ``revision_key``,
+            ``write_units`` and ``published``.
+
+        Note:
+            Writes require an authenticated key with write access: an anonymous
+            caller gets 401, a key without the ``create`` grant gets a generic
+            403 (``access_denied``), and a collection whose connection does not
+            allow writes raises :class:`CollectionNotWritable`. A failed
+            write is never retried automatically — its outcome is unknown, so
+            re-read with a GET before retrying.
+        """
+        path = self._build_path(folder_path, suffix="/")
+        body: dict[str, Any] = {"data": dict(data)}
+        if key is not None:
+            body["key"] = key
+        return self._transport.request(
+            "POST", path, json_body=body, allow_retries=False
+        )
+
+    def update_resource(
+        self,
+        folder_path: str,
+        resource_key: str,
+        data: Mapping[str, Any],
+    ) -> Any:
+        """Replace a resource's document and publish a new revision.
+
+        This is a full-document replace, not a partial merge: fields absent from
+        ``data`` are removed from the stored resource.
+
+        Returns:
+            The parsed response mapping with ``resource_key``, ``revision_key``,
+            ``write_units`` and ``published``.
+
+        Note:
+            Writes require an authenticated key with write access: an anonymous
+            caller gets 401, a key without the ``update`` grant gets a generic
+            403 (``access_denied``), and a collection whose connection does not
+            allow writes raises :class:`CollectionNotWritable`. A failed write is
+            never retried automatically — its outcome is unknown, so re-read with
+            a GET before retrying.
+        """
+        path = self._build_path(folder_path, suffix=f"/{resource_key}/")
+        return self._transport.request(
+            "PUT", path, json_body={"data": dict(data)}, allow_retries=False
+        )
+
     def vector_search(
         self,
         folder_path: str,
@@ -338,6 +402,70 @@ class AsyncFluxClient:
     ) -> Any:
         path = self._build_path(folder_path, suffix="/_search")
         return await self._transport.arequest("POST", path, json_body=body)
+
+    async def create_resource(
+        self,
+        folder_path: str,
+        data: Mapping[str, Any],
+        *,
+        key: str | None = None,
+    ) -> Any:
+        """Create a resource in a collection and publish it immediately.
+
+        Args:
+            folder_path: Collection path, e.g. ``"articles"`` or a nested path
+                such as ``"users/usr_1/memories"``.
+            data: The resource document (a JSON object).
+            key: Optional external identifier for deduplication. Reusing a key
+                that already exists raises :class:`ExternalIdConflict`.
+
+        Returns:
+            The parsed response mapping with ``resource_key``, ``revision_key``,
+            ``write_units`` and ``published``.
+
+        Note:
+            Writes require an authenticated key with write access: an anonymous
+            caller gets 401, a key without the ``create`` grant gets a generic
+            403 (``access_denied``), and a collection whose connection does not
+            allow writes raises :class:`CollectionNotWritable`. A failed
+            write is never retried automatically — its outcome is unknown, so
+            re-read with a GET before retrying.
+        """
+        path = self._build_path(folder_path, suffix="/")
+        body: dict[str, Any] = {"data": dict(data)}
+        if key is not None:
+            body["key"] = key
+        return await self._transport.arequest(
+            "POST", path, json_body=body, allow_retries=False
+        )
+
+    async def update_resource(
+        self,
+        folder_path: str,
+        resource_key: str,
+        data: Mapping[str, Any],
+    ) -> Any:
+        """Replace a resource's document and publish a new revision.
+
+        This is a full-document replace, not a partial merge: fields absent from
+        ``data`` are removed from the stored resource.
+
+        Returns:
+            The parsed response mapping with ``resource_key``, ``revision_key``,
+            ``write_units`` and ``published``.
+
+        Note:
+            Writes require an authenticated key with write access: an anonymous
+            caller gets 401, a key without the ``update`` grant gets a generic
+            403 (``access_denied``), and a collection whose connection does not
+            allow writes raises :class:`CollectionNotWritable`. A failed write is
+            never retried automatically — its outcome is unknown, so re-read with
+            a GET before retrying.
+        """
+        path = self._build_path(folder_path, suffix=f"/{resource_key}/")
+        return await self._transport.arequest(
+            "PUT", path, json_body={"data": dict(data)}, allow_retries=False
+        )
 
     async def vector_search(
         self,

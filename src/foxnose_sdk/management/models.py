@@ -504,14 +504,11 @@ class UsageMetric(BaseModel):
 
 
 class UsageBreakdown(BaseModel):
-    """Breakdown of quota-based resource usage."""
+    """Breakdown of quota-based resource usage (organization-scoped entities)."""
 
     projects: UsageMetric
-    environments: UsageMetric
-    folders: UsageMetric
     resources: UsageMetric
     users: UsageMetric
-    components: UsageMetric
 
 
 class CurrentUsage(BaseModel):

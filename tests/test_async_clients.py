@@ -11,7 +11,7 @@ from foxnose_sdk.config import FoxnoseConfig
 from foxnose_sdk.flux.client import AsyncFluxClient
 from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import AsyncManagementClient
-from foxnose_sdk.errors import FoxnoseAPIError
+from foxnose_sdk.errors import FoxnoseAPIError, UpstreamError
 from foxnose_sdk.management.models import (
     BatchUpsertItem,
     BatchUpsertResult,
@@ -181,11 +181,10 @@ USAGE_JSON = {
     "storage": {"data_storage": 123.4, "vector_storage": 56.7},
     "usage": {
         "projects": {"max": 10, "current": 2},
-        "environments": {"max": 10, "current": 3},
-        "folders": {"max": 20, "current": 5},
         "resources": {"max": 100, "current": 15},
         "users": {"max": 10, "current": 4},
-        "components": {"max": 30, "current": 10},
+        # Extra server-side field: must be ignored by the model, never raise.
+        "environments": {"max": 10, "current": 3},
     },
     "current_usage": {
         "api_requests": 12345,
@@ -1881,6 +1880,60 @@ async def test_async_flux_vector_search_sends_correct_body():
     assert captured["body"]["vector_search"]["query"] == "semantic query"
     assert captured["body"]["vector_search"]["top_k"] == 5
     await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_create_and_update_resource():
+    calls: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(
+            (request.method, request.url.path, json.loads(request.content.decode()))
+        )
+        return httpx.Response(
+            201,
+            json={
+                "resource_key": "res_1",
+                "revision_key": "rev_1",
+                "write_units": 1,
+                "published": True,
+            },
+        )
+
+    flux = _build_async_flux_client(handler)
+    created = await flux.create_resource("articles", {"title": "Hi"})
+    assert created["published"] is True
+    await flux.update_resource("users/usr_1/memories", "res_1", {"title": "Bye"})
+    await flux.aclose()
+
+    assert calls[0] == ("POST", "/v1/articles/", {"data": {"title": "Hi"}})
+    assert calls[1] == (
+        "PUT",
+        "/v1/users/usr_1/memories/res_1/",
+        {"data": {"title": "Bye"}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_flux_update_502_is_not_retried():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            502,
+            json={
+                "error_code": "upstream_error",
+                "message": "Upstream write failed",
+                "detail": None,
+            },
+        )
+
+    flux = _build_async_flux_client(handler)
+    with pytest.raises(UpstreamError):
+        await flux.update_resource("articles", "res_1", {"title": "x"})
+    await flux.aclose()
+    assert calls["n"] == 1  # a write 502 is never retried on the async path either
 
 
 @pytest.mark.asyncio

@@ -7,8 +7,69 @@ import pytest
 
 from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig, RetryConfig
-from foxnose_sdk.errors import FoxnoseAPIError, FoxnoseTransportError
+from foxnose_sdk.errors import (
+    CollectionNotWritable,
+    ContentValidationFailed,
+    ExternalIdConflict,
+    FoxnoseAPIError,
+    FoxnoseTransportError,
+    UpstreamError,
+    build_api_error,
+)
 from foxnose_sdk.http import HttpTransport
+
+
+def _api_error(status_code, error_code, *, detail=None, body=None):
+    return build_api_error(
+        message="",
+        status_code=status_code,
+        error_code=error_code,
+        detail=detail,
+        response_headers=None,
+        response_body=body,
+    )
+
+
+def test_build_api_error_collection_not_writable():
+    err = _api_error(403, "collection_not_writable", body={"error_code": "collection_not_writable"})
+    assert isinstance(err, CollectionNotWritable)
+    assert isinstance(err, FoxnoseAPIError)
+    assert err.status_code == 403
+
+
+def test_build_api_error_external_id_conflict():
+    err = _api_error(409, "external_id_conflict", body={"error_code": "external_id_conflict"})
+    assert isinstance(err, ExternalIdConflict)
+
+
+def test_build_api_error_content_validation_single():
+    detail = {"json_path": "$.title", "message": "required", "validator": "required"}
+    err = _api_error(422, "content_validation_failed", detail=detail)
+    assert isinstance(err, ContentValidationFailed)
+    assert err.errors == [detail]
+    assert err.errors_truncated is False
+
+
+def test_build_api_error_content_validation_multiple_truncated():
+    detail = {
+        "json_path": "multiple",
+        "errors": [{"json_path": "$.a"}, {"json_path": "$.b"}],
+        "errors_truncated": True,
+        "errors_total": 250,
+    }
+    err = _api_error(422, "content_validation_failed", detail=detail)
+    assert [e["json_path"] for e in err.errors] == ["$.a", "$.b"]
+    assert err.errors_truncated is True
+
+
+def test_build_api_error_upstream():
+    err = _api_error(502, "upstream_error", body={"error_code": "upstream_error"})
+    assert isinstance(err, UpstreamError)
+
+
+def test_build_api_error_unknown_falls_through():
+    err = _api_error(418, "teapot")
+    assert type(err) is FoxnoseAPIError
 
 
 def _mock_response(json_data: Any, status_code: int = 200) -> httpx.MockTransport:

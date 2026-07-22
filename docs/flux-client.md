@@ -6,10 +6,10 @@ The `FluxClient` provides access to the FoxNose Flux API for content delivery.
 
 The Flux API is designed for:
 
-- **Read-only access** to published content
-- **Fast response times** optimized for high performance
-- **Public access** with API key authentication
+- **Fast reads** of published content
+- **API key authentication** (public reads; writes require a write-capable key)
 - **Search** capabilities for content discovery
+- **Writes** — create and replace resources
 
 ## Initialization
 
@@ -88,6 +88,31 @@ results = client.search(
 for item in results["results"]:
     print(item["data"]["title"])
 ```
+
+## Writing Resources
+
+Writes require a write-capable key. Creating and updating publish immediately;
+the response carries `resource_key`, `revision_key`, `write_units`, and
+`published`.
+
+```python
+# Create a resource. `key` is an optional external identifier used to
+# deduplicate — reusing an existing key raises ExternalIdConflict.
+created = client.create_resource(
+    "blog-posts",
+    {"title": "Hello", "body": "..."},
+    key="my-external-id",
+)
+
+# Replace the whole document (this is a full replace, not a partial merge).
+client.update_resource("blog-posts", created["resource_key"], {"title": "Hello (edited)"})
+```
+
+Writes also work with nested collection paths, e.g.
+`client.create_resource("users/usr_1/memories", {...})`.
+
+Writes are never retried automatically: a failed write's outcome is unknown, so
+on `UpstreamError` re-read the resource with a GET before deciding to retry.
 
 ## Vector Search
 

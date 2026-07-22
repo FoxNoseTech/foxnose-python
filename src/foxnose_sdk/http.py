@@ -54,6 +54,7 @@ class HttpTransport:
         content: bytes | bytearray | memoryview | None = None,
         headers: Mapping[str, str] | None = None,
         parse_json: bool = True,
+        allow_retries: bool = True,
     ) -> Any:
         response = self._send_with_retries(
             client=self._client,
@@ -67,6 +68,7 @@ class HttpTransport:
                 headers=headers,
             ),
             is_async=False,
+            allow_retries=allow_retries,
         )
         return self._maybe_decode_response(response, parse_json=parse_json)
 
@@ -80,6 +82,7 @@ class HttpTransport:
         content: bytes | bytearray | memoryview | None = None,
         headers: Mapping[str, str] | None = None,
         parse_json: bool = True,
+        allow_retries: bool = True,
     ) -> Any:
         response = await self._send_with_retries(
             client=self._async_client,
@@ -93,6 +96,7 @@ class HttpTransport:
                 headers=headers,
             ),
             is_async=True,
+            allow_retries=allow_retries,
         )
         return self._maybe_decode_response(response, parse_json=parse_json)
 
@@ -176,6 +180,7 @@ class HttpTransport:
         client: httpx.Client | httpx.AsyncClient,
         builder: Callable[[], httpx.Request],
         is_async: bool,
+        allow_retries: bool = True,
     ) -> httpx.Response | asyncio.Future[httpx.Response]:
         async def async_loop() -> httpx.Response:
             for attempt in range(1, self._retry.attempts + 1):
@@ -183,13 +188,16 @@ class HttpTransport:
                 try:
                     response = await client.send(request)
                 except httpx.RequestError as exc:
+                    if not allow_retries:
+                        raise FoxnoseTransportError(str(exc)) from exc
                     delay = self._handle_transport_error(exc, attempt)
                     if delay > 0:
                         await asyncio.sleep(delay)
                     continue
                 if response.status_code >= 400:
                     if (
-                        self._should_retry(request.method, response.status_code)
+                        allow_retries
+                        and self._should_retry(request.method, response.status_code)
                         and attempt < self._retry.attempts
                     ):
                         delay = self._compute_delay(
@@ -208,13 +216,16 @@ class HttpTransport:
                 try:
                     response = client.send(request)  # type: ignore[arg-type]
                 except httpx.RequestError as exc:
+                    if not allow_retries:
+                        raise FoxnoseTransportError(str(exc)) from exc
                     delay = self._handle_transport_error(exc, attempt)
                     if delay > 0:
                         time.sleep(delay)
                     continue
                 if response.status_code >= 400:
                     if (
-                        self._should_retry(request.method, response.status_code)
+                        allow_retries
+                        and self._should_retry(request.method, response.status_code)
                         and attempt < self._retry.attempts
                     ):
                         delay = self._compute_delay(

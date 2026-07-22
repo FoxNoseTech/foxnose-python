@@ -90,12 +90,65 @@ class RateLimitExceeded(FoxnoseAPIError):
         self.retry_after = retry_after
 
 
+class CollectionNotWritable(FoxnoseAPIError):
+    """Raised on HTTP 403 ``collection_not_writable`` — the target collection does
+    not accept writes (or the key in use lacks write access)."""
+
+
+class ExternalIdConflict(FoxnoseAPIError):
+    """Raised on HTTP 409 ``external_id_conflict`` — the supplied ``key`` already
+    identifies an existing resource in the collection."""
+
+
+class ContentValidationFailed(FoxnoseAPIError):
+    """Raised on HTTP 422 ``content_validation_failed`` — the submitted ``data``
+    failed the collection's schema.
+
+    ``errors`` is the list of individual validation problems, each a mapping that
+    includes a ``json_path`` locating the offending field. ``errors_truncated`` is
+    True when the server capped a very large error list.
+    """
+
+    def __init__(
+        self,
+        *,
+        errors: list | None = None,
+        errors_truncated: bool = False,
+        **base_kwargs: Any,
+    ) -> None:
+        super().__init__(**base_kwargs)
+        self.errors = errors or []
+        self.errors_truncated = errors_truncated
+
+
+class UpstreamError(FoxnoseAPIError):
+    """Raised on HTTP 502 ``upstream_error`` — a write could not be confirmed.
+
+    The write may or may not have been applied. Do not blindly retry; re-read the
+    resource with a GET to determine the actual state first.
+    """
+
+
 class FoxnoseAuthError(FoxnoseError):
     """Raised when authentication headers cannot be generated."""
 
 
 class FoxnoseTransportError(FoxnoseError):
     """Raised when the HTTP layer fails before receiving a response."""
+
+
+def _validation_errors_from_detail(detail: Any) -> tuple[list, bool]:
+    """Normalize a validation ``detail`` payload into (errors, truncated).
+
+    The detail is either a single problem mapping (carrying ``json_path``) or a
+    wrapper mapping carrying an ``errors`` list.
+    """
+    if isinstance(detail, dict):
+        if isinstance(detail.get("errors"), list):
+            return detail["errors"], bool(detail.get("errors_truncated", False))
+        if "json_path" in detail:
+            return [detail], bool(detail.get("errors_truncated", False))
+    return [], False
 
 
 def _header_lookup(headers: Mapping[str, str] | None, name: str) -> str | None:
@@ -173,5 +226,28 @@ def build_api_error(
             except ValueError:
                 retry_after = None
         return RateLimitExceeded(retry_after=retry_after, **base_kwargs)
+
+    if status_code == 403 and error_code == "collection_not_writable":
+        if not message:
+            base_kwargs["message"] = "Collection is not writable"
+        return CollectionNotWritable(**base_kwargs)
+
+    if status_code == 409 and error_code == "external_id_conflict":
+        if not message:
+            base_kwargs["message"] = "Resource key already exists"
+        return ExternalIdConflict(**base_kwargs)
+
+    if status_code == 422 and error_code == "content_validation_failed":
+        errors, truncated = _validation_errors_from_detail(detail)
+        if not message:
+            base_kwargs["message"] = "Content validation failed"
+        return ContentValidationFailed(
+            errors=errors, errors_truncated=truncated, **base_kwargs
+        )
+
+    if status_code == 502 and error_code == "upstream_error":
+        if not message:
+            base_kwargs["message"] = "Upstream write failed"
+        return UpstreamError(**base_kwargs)
 
     return FoxnoseAPIError(**base_kwargs)

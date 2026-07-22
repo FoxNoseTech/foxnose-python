@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, MutableMapping
 
+from ._version import __version__
+
 
 @dataclass
 class RetryConfig:
@@ -31,7 +33,7 @@ class RetryConfig:
         }
 
 
-DEFAULT_USER_AGENT = "foxnose-sdk/0.1.0"
+DEFAULT_USER_AGENT = f"foxnose-sdk/{__version__}"
 
 
 @dataclass

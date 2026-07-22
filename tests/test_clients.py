@@ -25,7 +25,12 @@ from foxnose_sdk.management.client import (
     _coerce_permission_object_payload,
     _resolve_key,
 )
-from foxnose_sdk.errors import FoxnoseAPIError
+from foxnose_sdk.errors import (
+    ExternalIdConflict,
+    FoxnoseAPIError,
+    FoxnoseTransportError,
+    UpstreamError,
+)
 from foxnose_sdk.management.models import (
     BatchItemError,
     BatchUpsertItem,
@@ -244,11 +249,10 @@ USAGE_JSON = {
     "storage": {"data_storage": 123.4, "vector_storage": 56.7},
     "usage": {
         "projects": {"max": 10, "current": 2},
-        "environments": {"max": 10, "current": 3},
-        "folders": {"max": 20, "current": 5},
         "resources": {"max": 100, "current": 15},
         "users": {"max": 10, "current": 4},
-        "components": {"max": 30, "current": 10},
+        # Extra server-side field: must be ignored by the model, never raise.
+        "environments": {"max": 10, "current": 3},
     },
     "current_usage": {
         "api_requests": 12345,
@@ -564,6 +568,11 @@ def test_get_organization_usage_returns_model():
     usage = client.get_organization_usage(ORG_KEY)
     assert usage.storage.data_storage == 123.4
     assert usage.usage.projects.current == 2
+    assert usage.usage.resources.current == 15
+    assert usage.usage.users.current == 4
+    # Entities that moved to per-project / per-environment scope are not part of
+    # the org-wide usage breakdown; an extra server field is ignored, not mapped.
+    assert not hasattr(usage.usage, "environments")
     assert usage.current_usage.embedding_tokens["total"] == 1000
     assert captured["path"].endswith(f"/organizations/{ORG_KEY}/usage/")
 
@@ -1590,6 +1599,86 @@ def test_flux_client_builds_paths_correctly():
         "/blog/_router",
         "/blog/articles/_schema",
     ]
+
+
+def test_flux_create_and_update_resource():
+    calls: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(
+            (request.method, request.url.path, json.loads(request.content.decode()))
+        )
+        return httpx.Response(
+            201,
+            json={
+                "resource_key": "res_1",
+                "revision_key": "rev_1",
+                "write_units": 1,
+                "published": True,
+            },
+        )
+
+    flux = _build_flux_client(handler)
+    created = flux.create_resource("articles", {"title": "Hi"}, key="ext-1")
+    assert created["resource_key"] == "res_1"
+    assert created["published"] is True
+    flux.update_resource("users/usr_1/memories", "res_1", {"title": "Bye"})
+
+    assert calls[0] == (
+        "POST",
+        "/v1/articles/",
+        {"data": {"title": "Hi"}, "key": "ext-1"},
+    )
+    assert calls[1] == (
+        "PUT",
+        "/v1/users/usr_1/memories/res_1/",
+        {"data": {"title": "Bye"}},
+    )
+
+
+def test_flux_create_conflict_raises_typed_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={"message": "dup", "error_code": "external_id_conflict", "detail": None},
+        )
+
+    flux = _build_flux_client(handler)
+    with pytest.raises(ExternalIdConflict):
+        flux.create_resource("articles", {"title": "Hi"}, key="dup")
+
+
+def test_flux_update_502_is_not_retried():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            502,
+            json={
+                "error_code": "upstream_error",
+                "message": "Upstream write failed",
+                "detail": None,
+            },
+        )
+
+    flux = _build_flux_client(handler)
+    with pytest.raises(UpstreamError):
+        flux.update_resource("articles", "res_1", {"title": "x"})
+    assert calls["n"] == 1  # exactly one attempt; a write 502 is never retried
+
+
+def test_flux_write_transport_error_is_not_retried():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ConnectError("boom", request=request)
+
+    flux = _build_flux_client(handler)
+    with pytest.raises(FoxnoseTransportError):
+        flux.create_resource("articles", {"title": "Hi"})
+    assert calls["n"] == 1  # single attempt; a write transport error is never retried
 
 
 # ---------------------------------------------------------------------------

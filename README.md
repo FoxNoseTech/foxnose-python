@@ -180,6 +180,12 @@ client = FluxClient(
 )
 
 resources = client.list_resources("blog-posts")
+
+# Writes require a write-capable key. Create publishes immediately; `key` is an
+# optional external id used to deduplicate. update_resource is a full replace.
+created = client.create_resource("blog-posts", {"title": "Hello"}, key="my-id")
+client.update_resource("blog-posts", created["resource_key"], {"title": "Hello (edited)"})
+
 client.close()
 ```
 

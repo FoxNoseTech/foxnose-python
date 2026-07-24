@@ -50,7 +50,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install ruff
-        run: pip install ruff
+        # Pinned: unpinned `ruff` resolves to the latest release on every run, so
+        # a new ruff version (new/changed default rules) can turn a green repo red
+        # with no code change. Bump deliberately alongside a repo-wide reformat.
+        run: pip install ruff==0.13.2
 
       - name: Run ruff check
         run: ruff check src/

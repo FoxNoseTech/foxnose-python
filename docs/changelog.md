@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-24
+
+### Added
+
+- `APIInfo` now types three previously-undocumented fields on the Management API
+  "API" object, with defaults for forward/backward compatibility with older
+  servers:
+  - `mcp_enabled: bool` — whether the MCP endpoint is exposed (default `True`)
+  - `router_introspection_enabled: bool` — whether router introspection is
+    exposed (default `True`)
+  - `cors_origins: list[str]` — allowed browser origins for cross-origin reads
+    (empty = off, `["*"]` = any origin); server-validated and normalized. Covers
+    public read traffic only — writes still require a key.
+  Setting these via `create_api` / `update_api` already worked (the payload is
+  passed through); this only adds the typed fields on the response model.
+
 ## [0.7.0] - 2026-07-22
 
 ### Added
@@ -166,7 +182,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling guide
 - Code examples
 
-[Unreleased]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.4.1...v0.4.2

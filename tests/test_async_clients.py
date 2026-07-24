@@ -1692,6 +1692,112 @@ async def test_async_update_api_folder_supports_route_descriptions():
     await client.aclose()
 
 
+async def test_async_create_api_passes_agent_and_cors_fields_and_parses_response():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            201,
+            json={
+                "key": "api-1",
+                "environment": "env123",
+                "created_at": "2026-07-23T00:00:00Z",
+                **captured["body"],
+                # A field this SDK version does not model yet (forward-compat):
+                "some_future_flag": True,
+            },
+        )
+
+    client = build_async_management_client(handler)
+    api = await client.create_api(
+        {
+            "name": "Storefront",
+            "prefix": "shop",
+            "is_auth_required": False,
+            "mcp_enabled": False,
+            "router_introspection_enabled": True,
+            "cors_origins": ["*"],
+        }
+    )
+
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/v1/env123/api/"
+    assert captured["body"]["cors_origins"] == ["*"]
+    assert captured["body"]["mcp_enabled"] is False
+    assert captured["body"]["router_introspection_enabled"] is True
+
+    assert api.cors_origins == ["*"]
+    assert api.mcp_enabled is False
+    assert api.router_introspection_enabled is True
+    assert not hasattr(api, "some_future_flag")
+    await client.aclose()
+
+
+async def test_async_update_api_passes_agent_and_cors_fields():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["method"] = request.method
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "key": "api-1",
+                "name": "Storefront",
+                "prefix": "shop",
+                "environment": "env123",
+                "is_auth_required": False,
+                "created_at": "2026-07-23T00:00:00Z",
+                **captured["body"],
+            },
+        )
+
+    client = build_async_management_client(handler)
+    api = await client.update_api(
+        "api-1",
+        {
+            "mcp_enabled": False,
+            "router_introspection_enabled": True,
+            "cors_origins": ["https://app.example.com"],
+        },
+    )
+    assert captured["method"] == "PUT"
+    assert captured["path"] == "/v1/env123/api/api-1/"
+    assert captured["body"]["mcp_enabled"] is False
+    assert captured["body"]["router_introspection_enabled"] is True
+    assert captured["body"]["cors_origins"] == ["https://app.example.com"]
+    assert api.mcp_enabled is False
+    assert api.router_introspection_enabled is True
+    assert api.cors_origins == ["https://app.example.com"]
+    await client.aclose()
+
+
+async def test_async_api_info_defaults_when_server_omits_new_fields():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "key": "api-1",
+                "name": "Legacy API",
+                "prefix": "v1",
+                "environment": "env123",
+                "is_auth_required": True,
+                "created_at": "2026-01-01T00:00:00Z",
+            },
+        )
+
+    client = build_async_management_client(handler)
+    api = await client.get_api("api-1")
+    assert api.cors_origins == []
+    assert api.mcp_enabled is True
+    assert api.router_introspection_enabled is True
+    await client.aclose()
+
+
 # ---------------------------------------------------------------------------
 # AsyncFluxClient tests
 # ---------------------------------------------------------------------------

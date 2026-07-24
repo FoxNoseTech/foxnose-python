@@ -85,6 +85,25 @@ def publish_all(client, folder: FolderRef):
         # ...
 ```
 
+## APIs
+
+```python
+api = client.create_api(
+    {
+        "name": "Storefront",
+        "prefix": "shop",
+        "is_auth_required": False,
+        "cors_origins": ["*"],  # browser CORS for public APIs (reads only)
+    }
+)
+print(api.key, api.cors_origins)
+```
+
+`cors_origins` is a list of allowed browser origins (each including the scheme,
+e.g. `https://app.example.com`) or `["*"]` for any origin; an empty list turns
+CORS off. `mcp_enabled` and `router_introspection_enabled` (both default `True`)
+control the `/{prefix}/_mcp` and `/{prefix}/_router` endpoints.
+
 ## API Folder Route Descriptions
 
 When connecting a folder to a Flux API, you can configure per-route descriptions used by Flux `/_router` introspection.

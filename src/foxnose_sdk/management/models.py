@@ -379,6 +379,14 @@ class APIInfo(BaseModel):
     environment: str
     version: str | None = None
     is_auth_required: bool
+    #: Whether the MCP endpoint (``/{prefix}/_mcp``) is exposed. Defaults to True.
+    mcp_enabled: bool = True
+    #: Whether router introspection (``/{prefix}/_router``) is exposed. Defaults to True.
+    router_introspection_enabled: bool = True
+    #: Allowed browser origins for cross-origin reads. Empty (the default) means
+    #: CORS is off; ``["*"]`` allows any origin. Server-validated and normalized.
+    #: Covers public read traffic only — writes still require a key.
+    cors_origins: list[str] = Field(default_factory=list)
     created_at: datetime
     path: str | None = None
 

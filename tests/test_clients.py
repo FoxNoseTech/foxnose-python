@@ -2782,3 +2782,65 @@ def test_update_api_folder_deprecated_alias_sends_unscoped_fields_when_given_and
     client.update_api_folder("api-1", "folder-1")
     assert "unscoped_levels" not in captured["body"]
     assert "unscoped_ancestors" not in captured["body"]
+
+
+# ---------------------------------------------------------------------------
+# Pins for two "the server validates, not us" decisions: truncate_text bounds
+# and the unscoped_levels/unscoped_ancestors pairing are both enforced by the
+# server, not the SDK. These tests exist ONLY to fail loudly if a future
+# change accidentally adds client-side validation for either -- they assert
+# that the value/field reaches the request, not that it is "correct".
+# ---------------------------------------------------------------------------
+
+
+def test_flux_search_forwards_out_of_range_and_non_integer_truncate_text_without_raising():
+    """Regression pin: truncate_text bounds (integer, >= 1) are validated by
+    the server via a 422, not the SDK. An out-of-range value (0) and a
+    non-integer value must keep forwarding to the query string unchanged --
+    not raise -- or client-side validation has crept into the SDK.
+    """
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+
+    flux.search(
+        "articles",
+        body={"find_text": {"query": "hello"}},
+        params={"truncate_text": 0},
+    )
+    assert captured["query"]["truncate_text"] == "0"
+
+    flux.search(
+        "articles",
+        body={"find_text": {"query": "hello"}},
+        params={"truncate_text": "not-an-integer"},
+    )
+    assert captured["query"]["truncate_text"] == "not-an-integer"
+
+
+def test_add_api_collection_forwards_unscoped_levels_or_unscoped_ancestors_alone_without_requiring_both():
+    """Regression pin: the API requires unscoped_levels and unscoped_ancestors
+    to be sent together, but enforcing that pairing is the server's job (see
+    add_api_collection's docstring), not the SDK's. Either field alone must
+    still reach the request body -- if this starts raising, client-side
+    pairing validation has crept into the SDK.
+    """
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_management_client(handler)
+
+    client.add_api_collection("api-1", "folder-1", unscoped_levels=[0])
+    assert captured["body"]["unscoped_levels"] == [0]
+    assert "unscoped_ancestors" not in captured["body"]
+
+    client.add_api_collection("api-1", "folder-1", unscoped_ancestors=["anc-1"])
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1"]
+    assert "unscoped_levels" not in captured["body"]

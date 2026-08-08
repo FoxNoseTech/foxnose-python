@@ -307,9 +307,8 @@ client.list_resources("realty/accounts/acc_1/listings/photos")
 
 This works today for List Resources, Get Resource, and Schema — the folder
 path is an opaque, slash-trimmed string with no segment parsing or ancestor
-validation on the client side. **Writes cannot target a flat address**:
-`FluxClient` has no method that would let you, and the server rejects writes
-on flat paths regardless.
+validation on the client side. These addresses are read-only; the server
+rejects writes on a flat path.
 
 Not every configured level necessarily serves every read method. Before
 relying on a flat address, check `enabled`, `available`, and `read_methods`

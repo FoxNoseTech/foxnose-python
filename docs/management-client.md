@@ -133,6 +133,58 @@ updated = client.update_api_folder(
 )
 ```
 
+### Cross-Parent (Flat) Read Addressing
+
+For a strict-reference collection nested under one or more parents, pass
+`unscoped_levels` and `unscoped_ancestors` to expose additional, read-only
+addresses that drop some or all of the ancestor keys from the Flux path:
+
+```python
+connection = client.add_api_collection(
+    api_key="api-key",
+    collection_key="photos",
+    unscoped_levels=[0],  # 0 = fully flat; 1+ retains that many root ancestors
+    unscoped_ancestors=[
+        "01debe0d-0325-42b1-9bfd-ef52046cd785",  # accounts connection (UUID)
+        "432880c9-ae43-4462-b4f3-f16c18068ea5",  # listings connection (UUID)
+    ],
+)
+```
+
+The two must be sent together — the API rejects a level set with an empty
+ancestor chain. This is not validated client-side; the server owns the rule
+and may relax it.
+
+`unscoped_ancestors` and the `omitted_ancestors` / `retained_ancestors`
+entries below are connection UUIDs, **not** the short collection keys used
+elsewhere (e.g. `folder`). Do not conflate the two.
+
+The connection object returned by `add_api_collection`, `update_api_collection`,
+`get_api_collection`, and `list_api_collections` carries these fields,
+**read-only** — configure the addresses via `unscoped_levels` /
+`unscoped_ancestors` above, not by constructing `flat_routes` yourself:
+
+- `unscoped_levels: list[int]`, `unscoped_ancestors: list[str]` — echo what
+  was configured.
+- `expose_owner: bool` — present on the wire; semantics are unconfirmed, so
+  the SDK does not expose a way to set it.
+- `flat_routes: list[FlatRoute] | None` — one entry per configured level,
+  each with `level`, `path`, `omitted_ancestors`, `retained_ancestors`,
+  `enabled`, `read_methods`, `available`, `unavailable_reason`,
+  `published_generation`, and `router_generation`. `None` when the
+  connection has no key-bearing ancestor to flatten (not `[]`).
+- `flat_route: FlatRouteSummary | None` — a single, undocumented field that
+  appears to mirror whichever `flat_routes` entry is enabled. No behavior is
+  built on it in the SDK.
+
+Before relying on a flat address, check `enabled`, `available`, and
+`read_methods` per entry — `read_methods` is typed exactly as the server
+sends it, including two known discrepancies from the docs (raised with the
+API team, not worked around here): Get Resource appears in `read_methods` at
+level 0 even though the docs say it needs `level >= 1`, and `search` never
+appears in `read_methods` at any level even though the docs list Search as
+available on flat addresses.
+
 ## Folder Operations
 
 ### List Folders

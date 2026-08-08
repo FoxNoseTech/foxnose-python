@@ -628,6 +628,8 @@ class ManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APICollectionSummary:
         """Add a collection to an API.
 
@@ -639,6 +641,13 @@ class ManagementClient(_ManagementPathsMixin):
             description_get_many: Optional short description for the list route.
             description_search: Optional short description for the search route.
             description_schema: Optional short description for the schema route.
+            unscoped_levels: Ancestor-nesting levels at which to expose
+                cross-parent (flat) read addresses for a strict-reference
+                collection, e.g. ``[0]`` for a fully-flat address.
+            unscoped_ancestors: UUIDs of the ancestor connections the flat
+                addresses apply to. The API requires this to be sent together
+                with ``unscoped_levels`` — a level set with an empty ancestor
+                chain is rejected server-side; this is not enforced here.
 
         Note:
             The POST body uses the wire field name ``folder`` for compatibility.
@@ -656,6 +665,10 @@ class ManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = self.request(
             "POST", f"{self._api_collections_root(api_key)}/", json_body=payload
         )
@@ -682,8 +695,20 @@ class ManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APICollectionSummary:
-        """Update a collection's configuration within an API."""
+        """Update a collection's configuration within an API.
+
+        Args:
+            unscoped_levels: Ancestor-nesting levels at which to expose
+                cross-parent (flat) read addresses for a strict-reference
+                collection, e.g. ``[0]`` for a fully-flat address.
+            unscoped_ancestors: UUIDs of the ancestor connections the flat
+                addresses apply to. The API requires this to be sent together
+                with ``unscoped_levels`` — a level set with an empty ancestor
+                chain is rejected server-side; this is not enforced here.
+        """
         api_key = _resolve_key(api_key)
         collection_key = _resolve_key(collection_key)
         payload: dict[str, Any] = {}
@@ -697,6 +722,10 @@ class ManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = self.request(
             "PUT",
             f"{self._api_collections_root(api_key)}/{collection_key}/",
@@ -739,6 +768,8 @@ class ManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APIFolderSummary:
         """Deprecated alias for :meth:`add_api_collection`."""
         warn_deprecated_method("add_api_folder", "add_api_collection")
@@ -755,6 +786,10 @@ class ManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = self.request(
             "POST", f"{self._api_folders_root(api_key)}/", json_body=payload
         )
@@ -780,6 +815,8 @@ class ManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APIFolderSummary:
         """Deprecated alias for :meth:`update_api_collection`."""
         warn_deprecated_method("update_api_folder", "update_api_collection")
@@ -796,6 +833,10 @@ class ManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = self.request(
             "PUT", f"{self._api_folders_root(api_key)}/{folder_key}/", json_body=payload
         )
@@ -3017,6 +3058,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APICollectionSummary:
         api_key = _resolve_key(api_key)
         collection_key = _resolve_key(collection_key)
@@ -3031,6 +3074,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = await self.request(
             "POST", f"{self._api_collections_root(api_key)}/", json_body=payload
         )
@@ -3056,6 +3103,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APICollectionSummary:
         api_key = _resolve_key(api_key)
         collection_key = _resolve_key(collection_key)
@@ -3070,6 +3119,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = await self.request(
             "PUT",
             f"{self._api_collections_root(api_key)}/{collection_key}/",
@@ -3112,6 +3165,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APIFolderSummary:
         warn_deprecated_method("add_api_folder", "add_api_collection")
         api_key = _resolve_key(api_key)
@@ -3127,6 +3182,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = await self.request(
             "POST", f"{self._api_folders_root(api_key)}/", json_body=payload
         )
@@ -3153,6 +3212,8 @@ class AsyncManagementClient(_ManagementPathsMixin):
         description_get_many: str | None = None,
         description_search: str | None = None,
         description_schema: str | None = None,
+        unscoped_levels: list[int] | None = None,
+        unscoped_ancestors: list[str] | None = None,
     ) -> APIFolderSummary:
         warn_deprecated_method("update_api_folder", "update_api_collection")
         api_key = _resolve_key(api_key)
@@ -3168,6 +3229,10 @@ class AsyncManagementClient(_ManagementPathsMixin):
             payload["description_search"] = description_search
         if description_schema is not None:
             payload["description_schema"] = description_schema
+        if unscoped_levels is not None:
+            payload["unscoped_levels"] = unscoped_levels
+        if unscoped_ancestors is not None:
+            payload["unscoped_ancestors"] = unscoped_ancestors
         data = await self.request(
             "PUT", f"{self._api_folders_root(api_key)}/{folder_key}/", json_body=payload
         )

@@ -394,8 +394,52 @@ class APIInfo(BaseModel):
 APIList = PaginatedResponse[APIInfo]
 
 
+class FlatRoute(BaseModel):
+    """One cross-parent (flat) read address for a strict-reference collection.
+
+    Fully-flat (``level == 0``) drops every ancestor key from the path;
+    partially-flat (``level >= 1``) retains the root-most ancestor keys.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    level: int
+    path: str
+    omitted_ancestors: list[str]
+    retained_ancestors: list[str]
+    enabled: bool
+    read_methods: list[str]
+    available: bool
+    unavailable_reason: str | None
+    published_generation: int
+    router_generation: int
+
+
+class FlatRouteSummary(BaseModel):
+    """The connection's currently-active flat route, singular.
+
+    Undocumented: present on connection responses but not covered by the API
+    docs. It appears to mirror whichever entry of ``flat_routes`` is enabled,
+    minus ``level`` and ``retained_ancestors``. No behavior is built on it;
+    it is typed here only so it is not silently dropped.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    path: str
+    omitted_ancestors: list[str]
+    enabled: bool
+    read_methods: list[str]
+    available: bool
+    unavailable_reason: str | None
+    published_generation: int
+    router_generation: int
+
+
 class APIFolderSummary(BaseModel):
     """Association between an API and a folder."""
+
+    model_config = ConfigDict(extra="allow")
 
     folder: str
     api: str | None = None
@@ -406,6 +450,19 @@ class APIFolderSummary(BaseModel):
     description_search: str | None = None
     description_schema: str | None = None
     created_at: datetime | None = None
+
+    # Cross-parent (flat) addressing. `unscoped_levels`/`unscoped_ancestors`
+    # and `expose_owner` were present on every connection inspected
+    # (including ones with no flat routes, as `[]`, `[]`, `False`) — not
+    # nullable, but defaulted so an omitted key degrades to an empty value
+    # instead of a parse error. `flat_route`/`flat_routes` were observed
+    # `null` on a connection with no key-bearing ancestor, so both are
+    # optional *and* nullable.
+    unscoped_levels: list[int] = Field(default_factory=list)
+    unscoped_ancestors: list[str] = Field(default_factory=list)
+    expose_owner: bool = False
+    flat_route: FlatRouteSummary | None = None
+    flat_routes: list[FlatRoute] | None = None
 
 
 APIFolderList = PaginatedResponse[APIFolderSummary]
@@ -630,4 +687,6 @@ __all__ = [
     "BatchUpsertItem",
     "BatchItemError",
     "BatchUpsertResult",
+    "FlatRoute",
+    "FlatRouteSummary",
 ]

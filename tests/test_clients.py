@@ -32,6 +32,7 @@ from foxnose_sdk.errors import (
     UpstreamError,
 )
 from foxnose_sdk.management.models import (
+    APIFolderSummary,
     BatchItemError,
     BatchUpsertItem,
     BatchUpsertResult,
@@ -2379,3 +2380,405 @@ def test_flux_search_backward_compatible():
     flux = _build_flux_client(handler)
     flux.search("articles", body={"find_text": {"query": "old style"}, "limit": 5})
     assert captured["body"] == {"find_text": {"query": "old style"}, "limit": 5}
+
+
+# ---------------------------------------------------------------------------
+# `search()` query params (truncate_text) and `query_params` on the four
+# search wrappers.
+# ---------------------------------------------------------------------------
+
+
+def test_flux_search_sends_truncate_text_in_query_string_not_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.search(
+        "articles",
+        body={"find_text": {"query": "hello"}},
+        params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+    assert "truncate_text" not in captured["body"]
+
+
+def test_flux_vector_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.vector_search(
+        "articles",
+        query="hello",
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+
+
+def test_flux_vector_field_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.vector_field_search(
+        "articles",
+        field="emb",
+        query_vector=[0.1, 0.2],
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+
+
+def test_flux_hybrid_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.hybrid_search(
+        "articles",
+        query="hello",
+        find_text={"query": "hello"},
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+
+
+def test_flux_boosted_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.boosted_search(
+        "articles",
+        find_text={"query": "keyword"},
+        query="hello",
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+
+
+def test_merge_extra_rejects_truncate_text_and_names_query_params():
+    flux = _build_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
+    with pytest.raises(ValueError, match="query_params"):
+        flux.vector_search("articles", query="hello", truncate_text=50)
+
+
+def test_flux_vector_search_params_extra_body_still_lands_in_body():
+    """Regression pin: a caller already passing `params={...}` as a body extra
+    (collected via **extra_body, since `vector_search` has no `params`
+    keyword) must keep landing in the JSON body unchanged. `query_params` is
+    additive and must not reroute a pre-existing `params` extra to the query
+    string.
+    """
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flux.vector_search(
+        "articles",
+        query="hello",
+        params={"some": "value"},
+    )
+    assert captured["body"]["params"] == {"some": "value"}
+    assert captured["query"] == {}
+
+
+# ---------------------------------------------------------------------------
+# Cross-parent (flat) address path-construction pins.
+#
+# These prove the SDK builds the URL for a fully-flat and a partially-flat
+# collection path correctly. They do NOT prove the server serves a given
+# read method at that level -- that is a server-side contract (see the two
+# `read_methods` discrepancies raised with the API team).
+# ---------------------------------------------------------------------------
+
+
+def test_flux_builds_fully_flat_path_for_list_get_search_schema():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        if request.url.path.endswith("/_schema"):
+            return httpx.Response(
+                200,
+                json={
+                    "json_schema": {"type": "object"},
+                    "searchable_fields": [],
+                    "non_searchable_fields": [],
+                    "path": "/v1/realty/accounts/listings/photos",
+                    "actions": [],
+                },
+            )
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    flat_path = "realty/accounts/listings/photos"
+    flux.list_resources(flat_path)
+    flux.get_resource(flat_path, "photo-1")
+    flux.search(flat_path, body={"find_text": {"query": "x"}})
+    flux.get_schema(flat_path)
+    assert captured == [
+        "/v1/realty/accounts/listings/photos",
+        "/v1/realty/accounts/listings/photos/photo-1",
+        "/v1/realty/accounts/listings/photos/_search",
+        "/v1/realty/accounts/listings/photos/_schema",
+    ]
+
+
+def test_flux_builds_partially_flat_path_for_list_get_search_schema():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        if request.url.path.endswith("/_schema"):
+            return httpx.Response(
+                200,
+                json={
+                    "json_schema": {"type": "object"},
+                    "searchable_fields": [],
+                    "non_searchable_fields": [],
+                    "path": "/v1/realty/accounts/{accounts_key}/listings/photos",
+                    "actions": [],
+                },
+            )
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_flux_client(handler)
+    partial_path = "realty/accounts/acc-1/listings/photos"
+    flux.list_resources(partial_path)
+    flux.get_resource(partial_path, "photo-1")
+    flux.search(partial_path, body={"find_text": {"query": "x"}})
+    flux.get_schema(partial_path)
+    assert captured == [
+        "/v1/realty/accounts/acc-1/listings/photos",
+        "/v1/realty/accounts/acc-1/listings/photos/photo-1",
+        "/v1/realty/accounts/acc-1/listings/photos/_search",
+        "/v1/realty/accounts/acc-1/listings/photos/_schema",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# APIFolderSummary / cross-parent connection shape.
+# ---------------------------------------------------------------------------
+
+PRODUCTION_CONNECTION_JSON = {
+    "folder": "9wjjtw76dyj0",
+    "api": "949sr5xz7kcj",
+    "created_at": "2026-08-01T06:43:11.331505-05:00",
+    "allowed_methods": ["get_one", "get_many"],
+    "description_get_one": "Returns one resource by id.",
+    "description_get_many": "Returns a paginated list of resources.",
+    "description_search": "Searches resources by filters.",
+    "description_schema": "Returns JSON schema for this resource.",
+    "unscoped_ancestors": [
+        "01debe0d-0325-42b1-9bfd-ef52046cd785",
+        "432880c9-ae43-4462-b4f3-f16c18068ea5",
+    ],
+    "unscoped_levels": [0],
+    "expose_owner": False,
+    "flat_route": {
+        "path": "/realty/accounts/listings/photos",
+        "omitted_ancestors": [
+            "01debe0d-0325-42b1-9bfd-ef52046cd785",
+            "432880c9-ae43-4462-b4f3-f16c18068ea5",
+        ],
+        "enabled": True,
+        "read_methods": ["get_one", "get_many"],
+        "available": True,
+        "unavailable_reason": None,
+        "published_generation": 18,
+        "router_generation": 18,
+    },
+    "flat_routes": [
+        {
+            "level": 0,
+            "path": "/realty/accounts/listings/photos",
+            "omitted_ancestors": [
+                "01debe0d-0325-42b1-9bfd-ef52046cd785",
+                "432880c9-ae43-4462-b4f3-f16c18068ea5",
+            ],
+            "retained_ancestors": [],
+            "enabled": True,
+            "read_methods": ["get_one", "get_many"],
+            "available": True,
+            "unavailable_reason": None,
+            "published_generation": 18,
+            "router_generation": 18,
+        },
+        {
+            "level": 1,
+            "path": "/realty/accounts/{accounts_key}/listings/photos",
+            "omitted_ancestors": ["432880c9-ae43-4462-b4f3-f16c18068ea5"],
+            "retained_ancestors": ["01debe0d-0325-42b1-9bfd-ef52046cd785"],
+            "enabled": False,
+            "read_methods": ["get_one", "get_many"],
+            "available": True,
+            "unavailable_reason": None,
+            "published_generation": 18,
+            "router_generation": 18,
+        },
+    ],
+}
+
+
+def test_api_folder_summary_parses_full_production_connection():
+    summary = APIFolderSummary.model_validate(PRODUCTION_CONNECTION_JSON)
+    assert summary.unscoped_levels == [0]
+    assert summary.unscoped_ancestors == [
+        "01debe0d-0325-42b1-9bfd-ef52046cd785",
+        "432880c9-ae43-4462-b4f3-f16c18068ea5",
+    ]
+    assert summary.expose_owner is False
+    assert summary.flat_route is not None
+    assert summary.flat_route.path == "/realty/accounts/listings/photos"
+    assert summary.flat_routes is not None
+    assert len(summary.flat_routes) == 2
+    assert summary.flat_routes[0].level == 0
+    assert summary.flat_routes[0].retained_ancestors == []
+    assert summary.flat_routes[1].level == 1
+    assert summary.flat_routes[1].retained_ancestors == [
+        "01debe0d-0325-42b1-9bfd-ef52046cd785"
+    ]
+
+
+def test_api_folder_summary_parses_null_flat_route_and_flat_routes():
+    payload = {**API_FOLDER_JSON, "flat_route": None, "flat_routes": None}
+    summary = APIFolderSummary.model_validate(payload)
+    assert summary.flat_route is None
+    assert summary.flat_routes is None
+    # Genuinely absent (not present in API_FOLDER_JSON at all) -> defaults.
+    assert summary.unscoped_levels == []
+    assert summary.unscoped_ancestors == []
+    assert summary.expose_owner is False
+
+
+def test_api_folder_summary_preserves_unknown_fields_via_extra_allow():
+    payload = {
+        **PRODUCTION_CONNECTION_JSON,
+        "some_future_top_level_flag": True,
+        "flat_routes": [
+            {
+                **PRODUCTION_CONNECTION_JSON["flat_routes"][0],
+                "some_future_route_flag": "x",
+            }
+        ],
+    }
+    summary = APIFolderSummary.model_validate(payload)
+    assert summary.model_extra is not None
+    assert summary.model_extra["some_future_top_level_flag"] is True
+    assert summary.flat_routes[0].model_extra["some_future_route_flag"] == "x"
+
+
+# ---------------------------------------------------------------------------
+# add_api_collection / update_api_collection (+ deprecated add_api_folder /
+# update_api_folder aliases) send unscoped_levels / unscoped_ancestors when
+# given, and omit them when not.
+# ---------------------------------------------------------------------------
+
+
+def test_add_api_collection_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_management_client(handler)
+    client.add_api_collection(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0],
+        unscoped_ancestors=["anc-1"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1"]
+
+    client.add_api_collection("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+
+
+def test_update_api_collection_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_management_client(handler)
+    client.update_api_collection(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0, 1],
+        unscoped_ancestors=["anc-1", "anc-2"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0, 1]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1", "anc-2"]
+
+    client.update_api_collection("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+
+
+def test_add_api_folder_deprecated_alias_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_management_client(handler)
+    client.add_api_folder(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0],
+        unscoped_ancestors=["anc-1"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1"]
+
+    client.add_api_folder("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+
+
+def test_update_api_folder_deprecated_alias_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_management_client(handler)
+    client.update_api_folder(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0, 1],
+        unscoped_ancestors=["anc-1", "anc-2"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0, 1]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1", "anc-2"]
+
+    client.update_api_folder("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]

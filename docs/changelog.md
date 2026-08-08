@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-08
+
+### Added
+
+- **`truncate_text` query parameter on Flux search.** `FluxClient.search()` /
+  `AsyncFluxClient.search()` now accept a keyword-only `params` mapping,
+  forwarded to the query string (the transport already supported this; it
+  was not plumbed through `search()`). Combined with the existing
+  passthrough on `list_resources()`, both List Resources and Search now
+  support `truncate_text` — an integer ≥ 1 that caps every `text`-typed
+  field in the response and is ignored when `raw=true`. The response marks
+  truncated fields under `_sys.truncated` (each entry has `field`, `locale`
+  — `null` for non-localized fields — and `original_length`); fields within
+  the limit get no entry. There is no client-side validation: an invalid
+  value (non-integer or < 1) surfaces as a server `422 validation_error`.
+- **`query_params` on the four search wrappers** — `vector_search()`,
+  `vector_field_search()`, `hybrid_search()`, `boosted_search()` (sync and
+  async) — forwarded to the query string, so `truncate_text` (or any other
+  query parameter) can be combined with the typed search helpers. Named
+  `query_params` rather than `params` deliberately: `params` was already a
+  meaningful key inside `**extra_body` (forwarded to the JSON body), and an
+  explicit `params` keyword would have silently rerouted it to the query
+  string for any existing caller passing `params={...}` as a search-body
+  field. `_merge_extra` now raises if handed `truncate_text` as a body
+  field, naming `query_params` as the correct place for it.
+- **Cross-parent (flat) read addressing** for strict-reference collections.
+  `add_api_collection` / `update_api_collection` (and the deprecated
+  `add_api_folder` / `update_api_folder` aliases), sync and async, accept
+  `unscoped_levels: list[int]` and `unscoped_ancestors: list[str]` to expose
+  additional read-only addresses that drop (fully-flat, `level == 0`) or
+  partially drop (`level >= 1`, retaining the root-most ancestor keys) the
+  ancestor chain of a nested collection path. The API requires the two to be
+  sent together — not enforced client-side, since the server owns that rule
+  and may relax it.
+  - `APIFolderSummary` (aliased `APICollectionSummary`) gains
+    `unscoped_levels`, `unscoped_ancestors`, `expose_owner` (all default to
+    an empty/false value if the server omits them) and `flat_route` /
+    `flat_routes` (both optional *and* nullable — observed `null` on
+    connections with no key-bearing ancestor). New `FlatRoute` model for
+    each entry of `flat_routes`; new `FlatRouteSummary` model for the
+    singular `flat_route`, which is undocumented and mirrors whichever
+    route is currently enabled — no behavior is built on it.
+  - `APIFolderSummary` and both new route models now set
+    `model_config = ConfigDict(extra="allow")`, so unrecognized fields
+    (present or future) are preserved instead of silently dropped.
+  - List, Get Resource, and Schema already worked against these addresses
+    (the collection path is an opaque, slash-trimmed string); this release
+    only adds typed support for the connection object and for configuring
+    the addresses.
+  - Cross-parent writes are out of scope: `FluxClient` has no create/update
+    method that takes a folder path other than the ones already documented,
+    and the server rejects writes on flat paths regardless.
+  - Not addressed by this release, and not planned to be worked around in
+    the SDK: `flat_routes[].read_methods` reports `["get_one", "get_many"]`
+    at level 0 even though the docs describe Get Resource as available only
+    at `level >= 1`, and `read_methods` never includes `search` at any
+    level despite the docs listing Search as available on flat addresses.
+    Both are raised with the API team; `read_methods` is typed as sent.
+
+### Fixed
+
+- The default `DEFAULT_USER_AGENT` was pinned to `foxnose-sdk/0.1.0`
+  regardless of the installed version. The version now lives in a single
+  `_version.py` module imported by both `foxnose_sdk/__init__.py` (so
+  `foxnose_sdk.__version__` keeps working) and `config.py` (so the
+  User-Agent reports the real version), avoiding the circular import that
+  motivated the stale constant in the first place.
+
 ## [0.7.1] - 2026-07-24
 
 ### Added
@@ -182,7 +250,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling guide
 - Code examples
 
-[Unreleased]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/FoxNoseTech/foxnose-python/compare/v0.5.0...v0.6.0

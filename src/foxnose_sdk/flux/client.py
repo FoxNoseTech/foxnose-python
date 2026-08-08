@@ -20,6 +20,11 @@ _SEARCH_REQUEST_FIELDS = frozenset(SearchRequest.model_fields.keys())
 
 def _merge_extra(validated: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     """Merge extra_body into the validated payload, rejecting key conflicts."""
+    if "truncate_text" in extra:
+        raise ValueError(
+            "'truncate_text' is a query parameter, not a body field. "
+            "Pass it via 'query_params={\"truncate_text\": ...}' instead."
+        )
     conflicts = _SEARCH_REQUEST_FIELDS & extra.keys()
     if conflicts:
         raise ValueError(
@@ -101,9 +106,20 @@ class FluxClient:
         folder_path: str,
         *,
         body: Mapping[str, Any],
+        params: Mapping[str, Any] | None = None,
     ) -> Any:
+        """Search a collection.
+
+        Args:
+            folder_path: Collection path to search.
+            body: The search request body (see :class:`SearchRequest`).
+            params: Optional query parameters, e.g. ``{"truncate_text": 200}``
+                to cap every ``text``-typed field in the response. Values
+                are not validated client-side; an invalid ``truncate_text``
+                (non-integer or < 1) surfaces as a server ``422``.
+        """
         path = self._build_path(folder_path, suffix="/_search")
-        return self._transport.request("POST", path, json_body=body)
+        return self._transport.request("POST", path, json_body=body, params=params)
 
     def create_resource(
         self,
@@ -179,6 +195,7 @@ class FluxClient:
         similarity_threshold: float | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Semantic search using auto-generated embeddings."""
@@ -194,7 +211,7 @@ class FluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return self.search(folder_path, body=body)
+        return self.search(folder_path, body=body, params=query_params)
 
     def vector_field_search(
         self,
@@ -206,6 +223,7 @@ class FluxClient:
         similarity_threshold: float | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Search using custom pre-computed embeddings."""
@@ -221,7 +239,7 @@ class FluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return self.search(folder_path, body=body)
+        return self.search(folder_path, body=body, params=query_params)
 
     def hybrid_search(
         self,
@@ -237,6 +255,7 @@ class FluxClient:
         rerank_results: bool = True,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Blended text + vector search with configurable weights."""
@@ -258,7 +277,7 @@ class FluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return self.search(folder_path, body=body)
+        return self.search(folder_path, body=body, params=query_params)
 
     def boosted_search(
         self,
@@ -275,6 +294,7 @@ class FluxClient:
         max_boost_results: int = 20,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Text search with results boosted by vector similarity."""
@@ -319,7 +339,7 @@ class FluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return self.search(folder_path, body=body)
+        return self.search(folder_path, body=body, params=query_params)
 
     def get_router(self, *, params: Mapping[str, Any] | None = None) -> Any:
         """Return available routes and contracts under the configured API prefix."""
@@ -399,9 +419,22 @@ class AsyncFluxClient:
         folder_path: str,
         *,
         body: Mapping[str, Any],
+        params: Mapping[str, Any] | None = None,
     ) -> Any:
+        """Search a collection.
+
+        Args:
+            folder_path: Collection path to search.
+            body: The search request body (see :class:`SearchRequest`).
+            params: Optional query parameters, e.g. ``{"truncate_text": 200}``
+                to cap every ``text``-typed field in the response. Values
+                are not validated client-side; an invalid ``truncate_text``
+                (non-integer or < 1) surfaces as a server ``422``.
+        """
         path = self._build_path(folder_path, suffix="/_search")
-        return await self._transport.arequest("POST", path, json_body=body)
+        return await self._transport.arequest(
+            "POST", path, json_body=body, params=params
+        )
 
     async def create_resource(
         self,
@@ -477,6 +510,7 @@ class AsyncFluxClient:
         similarity_threshold: float | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Semantic search using auto-generated embeddings."""
@@ -492,7 +526,7 @@ class AsyncFluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return await self.search(folder_path, body=body)
+        return await self.search(folder_path, body=body, params=query_params)
 
     async def vector_field_search(
         self,
@@ -504,6 +538,7 @@ class AsyncFluxClient:
         similarity_threshold: float | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Search using custom pre-computed embeddings."""
@@ -519,7 +554,7 @@ class AsyncFluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return await self.search(folder_path, body=body)
+        return await self.search(folder_path, body=body, params=query_params)
 
     async def hybrid_search(
         self,
@@ -535,6 +570,7 @@ class AsyncFluxClient:
         rerank_results: bool = True,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Blended text + vector search with configurable weights."""
@@ -556,7 +592,7 @@ class AsyncFluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return await self.search(folder_path, body=body)
+        return await self.search(folder_path, body=body, params=query_params)
 
     async def boosted_search(
         self,
@@ -573,6 +609,7 @@ class AsyncFluxClient:
         max_boost_results: int = 20,
         limit: int | None = None,
         offset: int | None = None,
+        query_params: Mapping[str, Any] | None = None,
         **extra_body: Any,
     ) -> Any:
         """Text search with results boosted by vector similarity."""
@@ -617,7 +654,7 @@ class AsyncFluxClient:
             offset=offset,
         )
         body = _merge_extra(req.model_dump(exclude_none=True), extra_body)
-        return await self.search(folder_path, body=body)
+        return await self.search(folder_path, body=body, params=query_params)
 
     async def get_router(self, *, params: Mapping[str, Any] | None = None) -> Any:
         """Return available routes and contracts under the configured API prefix."""

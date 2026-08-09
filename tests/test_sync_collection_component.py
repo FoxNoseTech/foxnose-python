@@ -36,7 +36,9 @@ SYNC_OK_JSON: dict[str, Any] = {
 }
 
 
-def _build_client(handler: Callable[[httpx.Request], httpx.Response]) -> ManagementClient:
+def _build_client(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> ManagementClient:
     client = ManagementClient(
         base_url="https://api.example.com",
         environment_key=ENV_KEY,
@@ -132,6 +134,7 @@ def test_sync_collection_component_field_paths_and_to_versions():
 
 def test_sync_collection_component_rejects_to_versions_extras_subset():
     """Client-side invariant: to_versions keys must be a subset of field_paths."""
+
     # No HTTP call expected — handler should never run.
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("HTTP request must not be issued")

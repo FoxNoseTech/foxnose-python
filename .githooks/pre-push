@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# Runs the checks CI gates on, before the push leaves your machine.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#
+# Bypass for a genuine emergency:
+#     git push --no-verify
+#
+# This hook is a fast feedback loop, not a security boundary — it is opt-in per
+# clone and skippable. CI remains the real gate.
+
+set -e
+
+fail() {
+    echo ""
+    echo "pre-push: $1 failed."
+    echo "pre-push: fix with  $2"
+    echo "pre-push: or skip with  git push --no-verify"
+    exit 1
+}
+
+if ! command -v ruff >/dev/null 2>&1; then
+    echo "pre-push: ruff not found on PATH — skipping lint and format checks."
+    echo "pre-push: install it with  pip install ruff==0.13.2"
+else
+    echo "pre-push: ruff check ."
+    ruff check . || fail "ruff check" "ruff check --fix ."
+
+    echo "pre-push: ruff format --check ."
+    ruff format --check . || fail "ruff format" "ruff format ."
+fi
+
+echo "pre-push: pytest"
+pytest -q || fail "pytest" "pytest -q"
+
+echo "pre-push: ok"

@@ -28,6 +28,7 @@ from .models import (
     FieldList,
     FieldSummary,
     FluxAPIKeyList,
+    FluxAPIKeyBearerToken,
     FluxAPIKeySummary,
     FluxRoleList,
     FluxRoleSummary,
@@ -237,6 +238,9 @@ class _ManagementPathsMixin:
 
     def _flux_api_key_root(self, api_key: str) -> str:
         return f"{self._flux_api_keys_root()}/{api_key}"
+
+    def _flux_api_key_bearer_token_root(self, api_key: str) -> str:
+        return f"{self._flux_api_key_root(api_key)}/bearer-token"
 
     # API management paths
     def _apis_root(self) -> str:
@@ -546,6 +550,53 @@ class ManagementClient(_ManagementPathsMixin):
         """
         key = _resolve_key(key)
         self.request("DELETE", f"{self._flux_api_key_root(key)}/", parse_json=False)
+
+    def issue_flux_api_key_bearer_token(
+        self, key: FluxAPIKeyRef
+    ) -> FluxAPIKeyBearerToken:
+        """Issue a bearer token for a Flux API key, or replace the existing one.
+
+        A bearer token exists for clients that accept a single token value and
+        send it as ``Authorization: Bearer <token>`` with no way to choose the
+        scheme — hosted MCP connectors, notably the Claude API's
+        ``mcp_servers``. Those clients cannot send ``Simple`` or ``Secure`` at
+        all, which put every authentication-required Flux API out of their reach.
+
+        THE PLAINTEXT IS RETURNED ONLY HERE, AND ONLY ONCE. The service stores a
+        hash, exactly as it does for ``secret_key``, so a lost token is re-issued
+        rather than recovered. Later key reads expose only
+        ``bearer_token_prefix``.
+
+        The key itself is untouched: ``public_key``, ``secret_key``, ``role`` and
+        grants all survive, so ``Simple`` and ``Secure`` integrations keep
+        working across a re-issue. That is what makes this the way to cut off a
+        connector without recreating a key and reconfiguring everything using it.
+
+        There is at most one token per key; calling this again replaces it.
+
+        Args:
+            key: Unique identifier of the API key.
+        """
+        key = _resolve_key(key)
+        data = self.request("POST", f"{self._flux_api_key_bearer_token_root(key)}/")
+        return FluxAPIKeyBearerToken.model_validate(data)
+
+    def revoke_flux_api_key_bearer_token(self, key: FluxAPIKeyRef) -> None:
+        """Revoke a Flux API key's bearer token. The key keeps working.
+
+        Only the token is removed — the key, its role and its ``Simple`` /
+        ``Secure`` credentials are untouched. Idempotent: succeeds whether or not
+        a token was issued.
+
+        Args:
+            key: Unique identifier of the API key.
+        """
+        key = _resolve_key(key)
+        self.request(
+            "DELETE",
+            f"{self._flux_api_key_bearer_token_root(key)}/",
+            parse_json=False,
+        )
 
     # ------------------------------------------------------------------ #
     # API management operations
@@ -2964,6 +3015,23 @@ class AsyncManagementClient(_ManagementPathsMixin):
         key = _resolve_key(key)
         await self.request(
             "DELETE", f"{self._flux_api_key_root(key)}/", parse_json=False
+        )
+
+    async def issue_flux_api_key_bearer_token(
+        self, key: FluxAPIKeyRef
+    ) -> FluxAPIKeyBearerToken:
+        key = _resolve_key(key)
+        data = await self.request(
+            "POST", f"{self._flux_api_key_bearer_token_root(key)}/"
+        )
+        return FluxAPIKeyBearerToken.model_validate(data)
+
+    async def revoke_flux_api_key_bearer_token(self, key: FluxAPIKeyRef) -> None:
+        key = _resolve_key(key)
+        await self.request(
+            "DELETE",
+            f"{self._flux_api_key_bearer_token_root(key)}/",
+            parse_json=False,
         )
 
     # ------------------------------------------------------------------ #

@@ -673,6 +673,65 @@ def test_flux_api_key_lifecycle():
     assert captured["paths"][-1][0] == "DELETE"
 
 
+def test_flux_api_key_bearer_token_lifecycle():
+    """Issue and revoke address the SUB-RESOURCE, never the key itself.
+
+    A request to the key's own URL would delete the key and take its
+    Simple/Secure credentials with it — the token is a separate credential
+    precisely so it can be replaced without disturbing them.
+    """
+    captured: dict[str, Any] = {"paths": []}
+    token_json = {
+        "bearer_token": "fxk_A7fQ2mXeKp3vR8sT1uW5yZ2bC6dF9gH0jL4nQ7x",
+        "bearer_token_prefix": "fxk_A7fQ2mXe",
+        "bearer_token_issued_at": "2026-08-09T10:24:11.482Z",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["paths"].append((request.method, request.url.path))
+        if request.method == "POST":
+            return httpx.Response(200, json=token_json)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        raise AssertionError("Unexpected call")
+
+    client = build_management_client(handler)
+
+    issued = client.issue_flux_api_key_bearer_token("flux-key-1")
+    assert issued.bearer_token == token_json["bearer_token"]
+    assert issued.bearer_token_prefix == "fxk_A7fQ2mXe"
+    assert captured["paths"][0] == (
+        "POST",
+        "/v1/env123/permissions/flux-api/api-keys/flux-key-1/bearer-token/",
+    )
+
+    client.revoke_flux_api_key_bearer_token("flux-key-1")
+    method, path = captured["paths"][-1]
+    assert method == "DELETE"
+    assert path.endswith("/api-keys/flux-key-1/bearer-token/")
+    assert not path.endswith("/api-keys/flux-key-1/")
+
+
+def test_flux_api_key_bearer_fields_are_optional():
+    """A server predating the feature omits them; the model must still validate."""
+    from foxnose_sdk import FluxAPIKeySummary
+
+    key = FluxAPIKeySummary.model_validate(FLUX_API_KEY_JSON)
+    assert key.bearer_token_prefix is None
+    assert key.bearer_token_issued_at is None
+
+    with_token = FluxAPIKeySummary.model_validate(
+        FLUX_API_KEY_JSON
+        | {
+            "bearer_token_prefix": "fxk_A7fQ2mXe",
+            "bearer_token_issued_at": "2026-08-09T10:24:11.482Z",
+        }
+    )
+    assert with_token.bearer_token_prefix == "fxk_A7fQ2mXe"
+    # Only the prefix is ever exposed on a key read — never the credential.
+    assert not hasattr(with_token, "bearer_token")
+
+
 def test_management_role_crud():
     captured: list[str] = []
 

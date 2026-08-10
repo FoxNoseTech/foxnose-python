@@ -311,9 +311,35 @@ class FluxAPIKeySummary(BaseModel):
     role: str | None = None
     environment: str
     created_at: datetime
+    #: First 12 characters of the key's bearer token (e.g. ``fxk_A7fQ2mXe``), or
+    #: None when none is issued. Enough to recognise a token in a config file or
+    #: a log; never enough to use one — the token itself is returned only by
+    #: :meth:`ManagementClient.issue_flux_api_key_bearer_token`, once.
+    #: Optional so the model still validates against a server predating the
+    #: feature.
+    bearer_token_prefix: str | None = None
+    #: When the current bearer token was issued, or None.
+    bearer_token_issued_at: datetime | None = None
 
 
 FluxAPIKeyList = PaginatedResponse[FluxAPIKeySummary]
+
+
+class FluxAPIKeyBearerToken(BaseModel):
+    """The one-time response from issuing or re-issuing a bearer token.
+
+    A bearer token is an opaque credential bound to a Flux API key, for hosted
+    MCP connectors that accept only a token value and send it as
+    ``Authorization: Bearer <token>``. It identifies the key and nothing more:
+    role, grants and per-collection permissions are the key's own.
+    """
+
+    #: The credential, e.g. ``fxk_A7fQ2mXe...``. RETURNED ONLY HERE, ONLY ONCE —
+    #: the service stores a hash, so a lost token is re-issued, not recovered.
+    bearer_token: str
+    #: First 12 characters, also present on every subsequent key read.
+    bearer_token_prefix: str
+    bearer_token_issued_at: datetime
 
 
 class ManagementRoleSummary(BaseModel):

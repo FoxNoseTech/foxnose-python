@@ -581,6 +581,41 @@ async def test_async_flux_api_key_lifecycle():
 
 
 @pytest.mark.asyncio
+async def test_async_flux_api_key_bearer_token_lifecycle():
+    """Same contract as the sync client: the sub-resource, never the key."""
+    captured: dict[str, Any] = {"paths": []}
+    token_json = {
+        "bearer_token": "fxk_A7fQ2mXeKp3vR8sT1uW5yZ2bC6dF9gH0jL4nQ7x",
+        "bearer_token_prefix": "fxk_A7fQ2mXe",
+        "bearer_token_issued_at": "2026-08-09T10:24:11.482Z",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["paths"].append((request.method, request.url.path))
+        if request.method == "POST":
+            return httpx.Response(200, json=token_json)
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        raise AssertionError("Unexpected call")
+
+    client = build_async_management_client(handler)
+
+    issued = await client.issue_flux_api_key_bearer_token("flux-key-1")
+    assert issued.bearer_token == token_json["bearer_token"]
+    assert captured["paths"][0] == (
+        "POST",
+        "/v1/env123/permissions/flux-api/api-keys/flux-key-1/bearer-token/",
+    )
+
+    await client.revoke_flux_api_key_bearer_token("flux-key-1")
+    method, path = captured["paths"][-1]
+    assert method == "DELETE"
+    assert path.endswith("/api-keys/flux-key-1/bearer-token/")
+    assert not path.endswith("/api-keys/flux-key-1/")
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_async_management_role_crud():
     captured: list[str] = []
 

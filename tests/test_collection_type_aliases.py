@@ -54,7 +54,7 @@ def test_top_level_package_reexports_collection_types():
 def test_version_string_matches_pyproject():
     """Pin the declared package version (single-sourced from _version.py, which
     the build backend also reads for the distribution version)."""
-    assert foxnose_sdk.__version__ == "0.7.1"
+    assert foxnose_sdk.__version__ == "0.8.0"
 
 
 def test_user_agent_tracks_version():

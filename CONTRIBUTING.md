@@ -38,8 +38,10 @@ pip install -e ".[test]"
 4. Install linting tools:
 
 ```bash
-pip install ruff
+pip install ruff==0.13.2
 ```
+
+Pin the version. CI pins it too: an unpinned `ruff` resolves to the latest release, so a new version with changed default rules can turn a green repo red with no code change.
 
 ## Development Workflow
 
@@ -54,6 +56,18 @@ ruff check .
 # Format code
 ruff format .
 ```
+
+Both commands cover the whole repo, including `tests/` — that is what CI gates on.
+
+### Checks before pushing
+
+To run the same checks locally on every `git push`, enable the repo's hook directory once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.githooks/pre-push` then runs `ruff check`, `ruff format --check` and `pytest`, and aborts the push if any fail. It is opt-in per clone and can be skipped with `git push --no-verify`, so it is a fast feedback loop rather than a guarantee — CI remains the real gate.
 
 ### Type Hints
 

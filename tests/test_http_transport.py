@@ -31,14 +31,18 @@ def _api_error(status_code, error_code, *, detail=None, body=None):
 
 
 def test_build_api_error_collection_not_writable():
-    err = _api_error(403, "collection_not_writable", body={"error_code": "collection_not_writable"})
+    err = _api_error(
+        403, "collection_not_writable", body={"error_code": "collection_not_writable"}
+    )
     assert isinstance(err, CollectionNotWritable)
     assert isinstance(err, FoxnoseAPIError)
     assert err.status_code == 403
 
 
 def test_build_api_error_external_id_conflict():
-    err = _api_error(409, "external_id_conflict", body={"error_code": "external_id_conflict"})
+    err = _api_error(
+        409, "external_id_conflict", body={"error_code": "external_id_conflict"}
+    )
     assert isinstance(err, ExternalIdConflict)
 
 

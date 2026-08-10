@@ -132,7 +132,9 @@ def test_402_is_not_retried():
             },
         )
 
-    transport = _transport(handler, retry_config=RetryConfig(attempts=3, backoff_factor=0))
+    transport = _transport(
+        handler, retry_config=RetryConfig(attempts=3, backoff_factor=0)
+    )
     with pytest.raises(PlanExhausted):
         transport.request("GET", "/v1/test")
     assert attempts["count"] == 1
@@ -202,7 +204,9 @@ def test_429_rate_limited_on_post_not_retried():
             headers={"Retry-After": "42"},
         )
 
-    transport = _transport(handler, retry_config=RetryConfig(attempts=3, backoff_factor=0))
+    transport = _transport(
+        handler, retry_config=RetryConfig(attempts=3, backoff_factor=0)
+    )
     with pytest.raises(RateLimitExceeded) as exc:
         transport.request("POST", "/v1/test", json_body={"data": "x"})
     err = exc.value
@@ -224,7 +228,9 @@ def test_429_rate_limited_on_get_retried_then_raises():
             headers={"Retry-After": "0"},
         )
 
-    transport = _transport(handler, retry_config=RetryConfig(attempts=3, backoff_factor=0))
+    transport = _transport(
+        handler, retry_config=RetryConfig(attempts=3, backoff_factor=0)
+    )
     with pytest.raises(RateLimitExceeded):
         transport.request("GET", "/v1/test")
     assert attempts["count"] == 3
@@ -240,7 +246,9 @@ def test_429_rate_limited_malformed_retry_after():
             headers={"Retry-After": "not-a-number"},
         )
 
-    transport = _transport(handler, retry_config=RetryConfig(attempts=1, backoff_factor=0))
+    transport = _transport(
+        handler, retry_config=RetryConfig(attempts=1, backoff_factor=0)
+    )
     with pytest.raises(RateLimitExceeded) as exc:
         transport.request("POST", "/v1/test", json_body={"data": "x"})
     assert exc.value.retry_after is None
@@ -263,7 +271,9 @@ def test_429_unknown_code_stays_generic():
             json={"error_code": "insufficient_units", "message": "No units left"},
         )
 
-    transport = _transport(handler, retry_config=RetryConfig(attempts=1, backoff_factor=0))
+    transport = _transport(
+        handler, retry_config=RetryConfig(attempts=1, backoff_factor=0)
+    )
     with pytest.raises(FoxnoseAPIError) as exc:
         transport.request("GET", "/v1/test")
     assert type(exc.value) is FoxnoseAPIError
@@ -328,10 +338,18 @@ def test_base_except_catches_each_subclass():
         ),
     ]
     for status_code, json_body, headers in cases:
-        def handler(request: httpx.Request, _json=json_body, _status=status_code, _headers=headers) -> httpx.Response:
+
+        def handler(
+            request: httpx.Request,
+            _json=json_body,
+            _status=status_code,
+            _headers=headers,
+        ) -> httpx.Response:
             return httpx.Response(_status, json=_json, headers=_headers)
 
-        transport = _transport(handler, retry_config=RetryConfig(attempts=1, backoff_factor=0))
+        transport = _transport(
+            handler, retry_config=RetryConfig(attempts=1, backoff_factor=0)
+        )
         with pytest.raises(FoxnoseAPIError):
             transport.request("GET", "/v1/test")
 

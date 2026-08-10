@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import warnings
-from typing import Any, Callable
+from typing import Callable
 
 import httpx
 import pytest
@@ -236,9 +236,7 @@ def test_add_api_collection_posts_with_folder_wire_field():
         return httpx.Response(201, json=API_FOLDER_JSON)
 
     client = build_management_client(handler)
-    res = client.add_api_collection(
-        "my-api", "coll-1", allowed_methods=["get_one"]
-    )
+    res = client.add_api_collection("my-api", "coll-1", allowed_methods=["get_one"])
     assert isinstance(res, APICollectionSummary)
     assert captured["path"] == f"/v1/{ENV_KEY}/api/my-api/collections/"
     assert captured["body"]["folder"] == "coll-1"
@@ -318,9 +316,7 @@ def test_create_collection_field_posts_payload():
         return httpx.Response(201, json=FIELD_JSON)
 
     client = build_management_client(handler)
-    client.create_collection_field(
-        "coll-1", "v1", {"name": "title", "type": "string"}
-    )
+    client.create_collection_field("coll-1", "v1", {"name": "title", "type": "string"})
     assert captured["body"]["name"] == "title"
 
 

@@ -55,8 +55,10 @@ jobs:
         # with no code change. Bump deliberately alongside a repo-wide reformat.
         run: pip install ruff==0.13.2
 
+      # Gates the whole repo, not just src/. Linting src/ alone let tests/ drift
+      # unchecked until it needed a repo-wide reformat to get back in line.
       - name: Run ruff check
-        run: ruff check src/
+        run: ruff check .
 
       - name: Run ruff format check
-        run: ruff format --check src/
+        run: ruff format --check .

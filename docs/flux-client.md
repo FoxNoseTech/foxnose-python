@@ -89,6 +89,10 @@ for item in results["results"]:
     print(item["data"]["title"])
 ```
 
+`search()` also accepts a keyword-only `params` mapping, forwarded to the
+query string (not the body) — e.g. `params={"truncate_text": 200}`. See
+[Truncating Text Fields](#truncating-text-fields) below.
+
 ## Writing Resources
 
 Writes require a write-capable key. Creating and updating publish immediately;
@@ -212,16 +216,108 @@ resources = client.list_resources(
 
 ### Pagination
 
-```python
-# First page
-page1 = client.list_resources("posts", params={"limit": 10})
+`next` in the response is a full absolute URL (e.g.
+`https://<env>.fxns.io/<prefix>/posts?limit=10&next=Xk6KmhmHZuAU`), not a bare
+cursor. The SDK does not follow it automatically — `list_resources` always
+targets the configured `base_url`/`api_prefix`, so a server-returned absolute
+URL can't be fed back in directly. Extract the `next` query parameter and
+re-pass it (along with any other parameters you want to keep, such as
+`truncate_text`) instead:
 
-# Next page (use the cursor from the previous response)
+```python
+from urllib.parse import urlparse, parse_qs
+
+# First page
+page1 = client.list_resources("posts", params={"limit": 10, "truncate_text": 200})
+
+# Next page: pull the cursor out of the absolute `next` URL and re-pass it
+# alongside the parameters you want to carry forward.
 if page1["next"]:
-    page2 = client.list_resources("posts", params={"limit": 10, "next": "<cursor>"})
+    cursor = parse_qs(urlparse(page1["next"]).query)["next"][0]
+    page2 = client.list_resources(
+        "posts",
+        params={"limit": 10, "truncate_text": 200, "next": cursor},
+    )
 
 print(f"Got {len(page1['results'])} items")
 ```
+
+If you ever build a helper that follows `next` automatically, validate that
+the URL is same-origin with your configured `base_url` *before* attaching any
+auth header — blindly following a server-supplied absolute URL with
+credentials attached is an SSRF and credential-leak vector.
+
+### Truncating Text Fields
+
+Pass `truncate_text` (an integer ≥ 1) on List Resources or Search to cap
+every `text`-typed field in the response. It has no effect when `raw=true`.
+
+```python
+resources = client.list_resources("blog-posts", params={"truncate_text": 200})
+results = client.search(
+    "blog-posts",
+    body={"find_text": {"query": "python"}},
+    params={"truncate_text": 200},
+)
+```
+
+Truncated fields are marked under `_sys.truncated`:
+
+```json
+{
+  "_sys": {
+    "key": "Cpa3KebZoqb3",
+    "truncated": [{"field": "body", "locale": null, "original_length": 210}]
+  }
+}
+```
+
+`locale` is `null` for non-localized fields; fields within the limit get no
+entry. The SDK does not validate `truncate_text` client-side — there is no
+typed request model for query parameters to hang a validator on. An invalid
+value (non-integer, or < 1) surfaces as a server `422 validation_error`.
+
+The same parameter works with the typed search wrappers — `vector_search()`,
+`vector_field_search()`, `hybrid_search()`, `boosted_search()` — via
+`query_params`, e.g. `client.vector_search("blog-posts", query="ml",
+query_params={"truncate_text": 200})`. Use `query_params`, not `params`: the
+wrappers already collect unrecognized keyword arguments (like `where` and
+`sort`) into the JSON body, and `params` is a plausible body field name.
+Passing `truncate_text` as a body field raises a clear error naming
+`query_params` as the fix.
+
+## Cross-Parent Addressing
+
+A strict-reference collection nested under one or more parents can also be
+configured (via the Management API, see
+[API Folder Route Descriptions](management-client.md#api-folder-route-descriptions))
+to expose additional, read-only addresses that drop some or all of the
+ancestor keys from the path:
+
+```python
+# Normal, fully-nested address:
+client.list_resources("realty/accounts/acc_1/listings/lst_1/photos")
+
+# Fully-flat (level 0): every ancestor key is dropped.
+client.list_resources("realty/accounts/listings/photos")
+
+# Partially-flat (level >= 1): the root-most ancestor key(s) are retained.
+client.list_resources("realty/accounts/acc_1/listings/photos")
+```
+
+This works today for List Resources, Get Resource, and Schema — the folder
+path is an opaque, slash-trimmed string with no segment parsing or ancestor
+validation on the client side. These addresses are read-only; the server
+rejects writes on a flat path.
+
+Not every configured level necessarily serves every read method. Before
+relying on a flat address, check `enabled`, `available`, and `read_methods`
+on the connection's `flat_routes` (see
+[API Folder Route Descriptions](management-client.md#api-folder-route-descriptions))
+rather than assuming every read method is available at every level — the
+docs and the live API disagree on this in at least two ways that are still
+open with the API team (Get Resource at level 0; Search never appears in
+`read_methods` at any level).
 
 ## Error Handling
 

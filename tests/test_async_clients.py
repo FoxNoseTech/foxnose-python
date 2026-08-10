@@ -13,6 +13,7 @@ from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import AsyncManagementClient
 from foxnose_sdk.errors import FoxnoseAPIError, UpstreamError
 from foxnose_sdk.management.models import (
+    APIFolderSummary,
     BatchUpsertItem,
     BatchUpsertResult,
     FolderSummary,
@@ -1692,6 +1693,102 @@ async def test_async_update_api_folder_supports_route_descriptions():
     await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_async_add_api_collection_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+    await client.add_api_collection(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0],
+        unscoped_ancestors=["anc-1"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1"]
+
+    await client.add_api_collection("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_update_api_collection_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+    await client.update_api_collection(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0, 1],
+        unscoped_ancestors=["anc-1", "anc-2"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0, 1]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1", "anc-2"]
+
+    await client.update_api_collection("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_add_api_folder_deprecated_alias_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+    await client.add_api_folder(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0],
+        unscoped_ancestors=["anc-1"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1"]
+
+    await client.add_api_folder("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_update_api_folder_deprecated_alias_sends_unscoped_fields_when_given_and_omits_when_not():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+    await client.update_api_folder(
+        "api-1",
+        "folder-1",
+        unscoped_levels=[0, 1],
+        unscoped_ancestors=["anc-1", "anc-2"],
+    )
+    assert captured["body"]["unscoped_levels"] == [0, 1]
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1", "anc-2"]
+
+    await client.update_api_folder("api-1", "folder-1")
+    assert "unscoped_levels" not in captured["body"]
+    assert "unscoped_ancestors" not in captured["body"]
+    await client.aclose()
+
+
 async def test_async_create_api_passes_agent_and_cors_fields_and_parses_response():
     captured: dict[str, Any] = {}
 
@@ -2170,3 +2267,381 @@ async def test_async_flux_boosted_search_requires_embedding():
             find_text={"query": "keyword"},
         )
     await flux.aclose()
+
+
+# ---------------------------------------------------------------------------
+# `search()` query params (truncate_text) and `query_params` on the four
+# search wrappers -- async mirror of tests/test_clients.py.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_flux_search_sends_truncate_text_in_query_string_not_body():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.search(
+        "articles",
+        body={"find_text": {"query": "hello"}},
+        params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+    assert "truncate_text" not in captured["body"]
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_vector_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.vector_search(
+        "articles",
+        query="hello",
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_vector_field_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.vector_field_search(
+        "articles",
+        field="emb",
+        query_vector=[0.1, 0.2],
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_hybrid_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.hybrid_search(
+        "articles",
+        query="hello",
+        find_text={"query": "hello"},
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_boosted_search_forwards_query_params_to_query_string():
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.boosted_search(
+        "articles",
+        find_text={"query": "keyword"},
+        query="hello",
+        query_params={"truncate_text": 50},
+    )
+    assert captured["query"] == {"truncate_text": "50"}
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_merge_extra_rejects_truncate_text_and_names_query_params():
+    flux = _build_async_flux_client(lambda r: httpx.Response(200, json=SEARCH_RESPONSE))
+    with pytest.raises(ValueError, match="query_params"):
+        await flux.vector_search("articles", query="hello", truncate_text=50)
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_flux_vector_search_params_extra_body_still_lands_in_body():
+    """Regression pin: a caller already passing `params={...}` as a body extra
+    must keep landing in the JSON body unchanged; `query_params` must not
+    reroute it to the query string.
+    """
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    await flux.vector_search(
+        "articles",
+        query="hello",
+        params={"some": "value"},
+    )
+    assert captured["body"]["params"] == {"some": "value"}
+    assert captured["query"] == {}
+    await flux.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Cross-parent (flat) address path-construction pins -- async mirror.
+#
+# These prove the SDK builds the URL for a fully-flat and a partially-flat
+# collection path correctly. They do NOT prove the server serves a given
+# read method at that level.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_flux_builds_fully_flat_path_for_list_get_search_schema():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        if request.url.path.endswith("/_schema"):
+            return httpx.Response(
+                200,
+                json={
+                    "json_schema": {"type": "object"},
+                    "searchable_fields": [],
+                    "non_searchable_fields": [],
+                    "path": "/v1/realty/accounts/listings/photos",
+                    "actions": [],
+                },
+            )
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    flat_path = "realty/accounts/listings/photos"
+    await flux.list_resources(flat_path)
+    await flux.get_resource(flat_path, "photo-1")
+    await flux.search(flat_path, body={"find_text": {"query": "x"}})
+    await flux.get_schema(flat_path)
+    await flux.aclose()
+    assert captured == [
+        "/v1/realty/accounts/listings/photos",
+        "/v1/realty/accounts/listings/photos/photo-1",
+        "/v1/realty/accounts/listings/photos/_search",
+        "/v1/realty/accounts/listings/photos/_schema",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_async_flux_builds_partially_flat_path_for_list_get_search_schema():
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        if request.url.path.endswith("/_schema"):
+            return httpx.Response(
+                200,
+                json={
+                    "json_schema": {"type": "object"},
+                    "searchable_fields": [],
+                    "non_searchable_fields": [],
+                    "path": "/v1/realty/accounts/{accounts_key}/listings/photos",
+                    "actions": [],
+                },
+            )
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+    partial_path = "realty/accounts/acc-1/listings/photos"
+    await flux.list_resources(partial_path)
+    await flux.get_resource(partial_path, "photo-1")
+    await flux.search(partial_path, body={"find_text": {"query": "x"}})
+    await flux.get_schema(partial_path)
+    await flux.aclose()
+    assert captured == [
+        "/v1/realty/accounts/acc-1/listings/photos",
+        "/v1/realty/accounts/acc-1/listings/photos/photo-1",
+        "/v1/realty/accounts/acc-1/listings/photos/_search",
+        "/v1/realty/accounts/acc-1/listings/photos/_schema",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# APIFolderSummary shape -- async mirror (the model is shared, but the plan
+# requires both test files to cover it).
+# ---------------------------------------------------------------------------
+
+PRODUCTION_CONNECTION_JSON = {
+    "folder": "9wjjtw76dyj0",
+    "api": "949sr5xz7kcj",
+    "created_at": "2026-08-01T06:43:11.331505-05:00",
+    "allowed_methods": ["get_one", "get_many"],
+    "description_get_one": "Returns one resource by id.",
+    "description_get_many": "Returns a paginated list of resources.",
+    "description_search": "Searches resources by filters.",
+    "description_schema": "Returns JSON schema for this resource.",
+    "unscoped_ancestors": [
+        "01debe0d-0325-42b1-9bfd-ef52046cd785",
+        "432880c9-ae43-4462-b4f3-f16c18068ea5",
+    ],
+    "unscoped_levels": [0],
+    "expose_owner": False,
+    "flat_route": {
+        "path": "/realty/accounts/listings/photos",
+        "omitted_ancestors": [
+            "01debe0d-0325-42b1-9bfd-ef52046cd785",
+            "432880c9-ae43-4462-b4f3-f16c18068ea5",
+        ],
+        "enabled": True,
+        "read_methods": ["get_one", "get_many"],
+        "available": True,
+        "unavailable_reason": None,
+        "published_generation": 18,
+        "router_generation": 18,
+    },
+    "flat_routes": [
+        {
+            "level": 0,
+            "path": "/realty/accounts/listings/photos",
+            "omitted_ancestors": [
+                "01debe0d-0325-42b1-9bfd-ef52046cd785",
+                "432880c9-ae43-4462-b4f3-f16c18068ea5",
+            ],
+            "retained_ancestors": [],
+            "enabled": True,
+            "read_methods": ["get_one", "get_many"],
+            "available": True,
+            "unavailable_reason": None,
+            "published_generation": 18,
+            "router_generation": 18,
+        },
+        {
+            "level": 1,
+            "path": "/realty/accounts/{accounts_key}/listings/photos",
+            "omitted_ancestors": ["432880c9-ae43-4462-b4f3-f16c18068ea5"],
+            "retained_ancestors": ["01debe0d-0325-42b1-9bfd-ef52046cd785"],
+            "enabled": False,
+            "read_methods": ["get_one", "get_many"],
+            "available": True,
+            "unavailable_reason": None,
+            "published_generation": 18,
+            "router_generation": 18,
+        },
+    ],
+}
+
+
+def test_api_folder_summary_parses_full_production_connection_async_file():
+    summary = APIFolderSummary.model_validate(PRODUCTION_CONNECTION_JSON)
+    assert summary.unscoped_levels == [0]
+    assert summary.flat_route.path == "/realty/accounts/listings/photos"
+    assert len(summary.flat_routes) == 2
+    assert summary.flat_routes[1].retained_ancestors == [
+        "01debe0d-0325-42b1-9bfd-ef52046cd785"
+    ]
+
+
+def test_api_folder_summary_parses_null_flat_route_and_flat_routes_async_file():
+    payload = {**API_FOLDER_JSON, "flat_route": None, "flat_routes": None}
+    summary = APIFolderSummary.model_validate(payload)
+    assert summary.flat_route is None
+    assert summary.flat_routes is None
+    assert summary.unscoped_levels == []
+    assert summary.unscoped_ancestors == []
+    assert summary.expose_owner is False
+
+
+def test_api_folder_summary_preserves_unknown_fields_via_extra_allow_async_file():
+    payload = {
+        **PRODUCTION_CONNECTION_JSON,
+        "some_future_top_level_flag": True,
+        "flat_routes": [
+            {
+                **PRODUCTION_CONNECTION_JSON["flat_routes"][0],
+                "some_future_route_flag": "x",
+            }
+        ],
+    }
+    summary = APIFolderSummary.model_validate(payload)
+    assert summary.model_extra["some_future_top_level_flag"] is True
+    assert summary.flat_routes[0].model_extra["some_future_route_flag"] == "x"
+
+
+# ---------------------------------------------------------------------------
+# Pins for two "the server validates, not us" decisions: truncate_text bounds
+# and the unscoped_levels/unscoped_ancestors pairing are both enforced by the
+# server, not the SDK. These tests exist ONLY to fail loudly if a future
+# change accidentally adds client-side validation for either -- they assert
+# that the value/field reaches the request, not that it is "correct". Async
+# mirror of tests/test_clients.py.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_flux_search_forwards_out_of_range_and_non_integer_truncate_text_without_raising():
+    """Regression pin: truncate_text bounds (integer, >= 1) are validated by
+    the server via a 422, not the SDK. An out-of-range value (0) and a
+    non-integer value must keep forwarding to the query string unchanged --
+    not raise -- or client-side validation has crept into the SDK.
+    """
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["query"] = dict(request.url.params)
+        return httpx.Response(200, json=SEARCH_RESPONSE)
+
+    flux = _build_async_flux_client(handler)
+
+    await flux.search(
+        "articles",
+        body={"find_text": {"query": "hello"}},
+        params={"truncate_text": 0},
+    )
+    assert captured["query"]["truncate_text"] == "0"
+
+    await flux.search(
+        "articles",
+        body={"find_text": {"query": "hello"}},
+        params={"truncate_text": "not-an-integer"},
+    )
+    assert captured["query"]["truncate_text"] == "not-an-integer"
+    await flux.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_add_api_collection_forwards_unscoped_levels_or_unscoped_ancestors_alone_without_requiring_both():
+    """Regression pin: the API requires unscoped_levels and unscoped_ancestors
+    to be sent together, but enforcing that pairing is the server's job (see
+    add_api_collection's docstring), not the SDK's. Either field alone must
+    still reach the request body -- if this starts raising, client-side
+    pairing validation has crept into the SDK.
+    """
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(201, json=API_FOLDER_JSON | captured["body"])
+
+    client = build_async_management_client(handler)
+
+    await client.add_api_collection("api-1", "folder-1", unscoped_levels=[0])
+    assert captured["body"]["unscoped_levels"] == [0]
+    assert "unscoped_ancestors" not in captured["body"]
+
+    await client.add_api_collection("api-1", "folder-1", unscoped_ancestors=["anc-1"])
+    assert captured["body"]["unscoped_ancestors"] == ["anc-1"]
+    assert "unscoped_levels" not in captured["body"]
+    await client.aclose()

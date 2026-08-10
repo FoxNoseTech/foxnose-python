@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import warnings
-from typing import Any, Callable
+from typing import Callable
 
 import httpx
 import pytest
@@ -262,9 +262,7 @@ async def test_list_folders_async_emits_deprecation_warning():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         await client.list_folders()
-    deprecations = [
-        w for w in caught if issubclass(w.category, DeprecationWarning)
-    ]
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert len(deprecations) == 1
     assert "list_folders" in str(deprecations[0].message)
 
@@ -295,9 +293,7 @@ async def test_add_api_folder_async_emits_warning():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         await client.add_api_folder("my-api", "coll-1", allowed_methods=["get_one"])
-    deprecations = [
-        w for w in caught if issubclass(w.category, DeprecationWarning)
-    ]
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert deprecations
     assert "add_api_folder" in str(deprecations[0].message)
 
@@ -312,8 +308,6 @@ async def test_publish_folder_version_async_emits_warning():
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         await client.publish_folder_version("coll-1", "v1")
-    deprecations = [
-        w for w in caught if issubclass(w.category, DeprecationWarning)
-    ]
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert deprecations
     assert "publish_folder_version" in str(deprecations[0].message)

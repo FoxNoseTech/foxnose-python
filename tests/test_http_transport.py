@@ -66,6 +66,45 @@ def test_build_api_error_content_validation_multiple_truncated():
     assert err.errors_truncated is True
 
 
+def test_build_api_error_data_validation_error_is_the_same_failure():
+    """A Flux resource write reports a schema violation with this code.
+
+    It used to fall through to a bare FoxnoseAPIError, so the documented
+    `except ContentValidationFailed` never fired on the most common way to
+    reach a schema violation, and callers had to match on the status code.
+    """
+    detail = {"json_path": "$.title", "message": "required", "validator": "required"}
+    err = _api_error(422, "data_validation_error", detail=detail)
+    assert isinstance(err, ContentValidationFailed)
+    assert err.errors == [detail]
+    assert err.errors_truncated is False
+
+
+def test_build_api_error_data_validation_error_multiple_truncated():
+    detail = {
+        "json_path": "multiple",
+        "errors": [{"json_path": "$.a"}, {"json_path": "$.b"}],
+        "errors_truncated": True,
+        "errors_total": 250,
+    }
+    err = _api_error(422, "data_validation_error", detail=detail)
+    assert isinstance(err, ContentValidationFailed)
+    assert [e["json_path"] for e in err.errors] == ["$.a", "$.b"]
+    assert err.errors_truncated is True
+
+
+def test_build_api_error_data_validation_error_keeps_its_own_code():
+    """Mapped onto a shared class, but the wire code is not rewritten."""
+    err = _api_error(422, "data_validation_error", detail={"json_path": "$.x"})
+    assert err.error_code == "data_validation_error"
+
+
+def test_build_api_error_other_422_still_falls_through():
+    """Only the two validation codes map; 422 alone must not."""
+    err = _api_error(422, "draft_not_supported")
+    assert type(err) is FoxnoseAPIError
+
+
 def test_build_api_error_upstream():
     err = _api_error(502, "upstream_error", body={"error_code": "upstream_error"})
     assert isinstance(err, UpstreamError)

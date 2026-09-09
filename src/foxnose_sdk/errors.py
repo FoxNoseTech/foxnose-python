@@ -101,8 +101,13 @@ class ExternalIdConflict(FoxnoseAPIError):
 
 
 class ContentValidationFailed(FoxnoseAPIError):
-    """Raised on HTTP 422 ``content_validation_failed`` — the submitted ``data``
-    failed the collection's schema.
+    """Raised on HTTP 422 when submitted ``data`` fails the collection's schema.
+
+    Two server error codes mean this, and both map here: ``content_validation_
+    failed`` and ``data_validation_error``. The latter is what a Flux resource
+    write returns, so leaving it unmapped meant the most common way to hit a
+    schema violation raised a bare ``FoxnoseAPIError``, and
+    ``except ContentValidationFailed`` never fired for it.
 
     ``errors`` is the list of individual validation problems, each a mapping that
     includes a ``json_path`` locating the offending field. ``errors_truncated`` is
@@ -135,6 +140,15 @@ class FoxnoseAuthError(FoxnoseError):
 
 class FoxnoseTransportError(FoxnoseError):
     """Raised when the HTTP layer fails before receiving a response."""
+
+
+# Both codes describe the same failure -- submitted data rejected by the
+# collection schema -- and carry the same detail shape. The resource-write path
+# raises RevisionValidationError ("data_validation_error"); other paths raise
+# the content variant.
+_CONTENT_VALIDATION_CODES = frozenset(
+    {"content_validation_failed", "data_validation_error"}
+)
 
 
 def _validation_errors_from_detail(detail: Any) -> tuple[list, bool]:
@@ -237,7 +251,7 @@ def build_api_error(
             base_kwargs["message"] = "Resource key already exists"
         return ExternalIdConflict(**base_kwargs)
 
-    if status_code == 422 and error_code == "content_validation_failed":
+    if status_code == 422 and error_code in _CONTENT_VALIDATION_CODES:
         errors, truncated = _validation_errors_from_detail(detail)
         if not message:
             base_kwargs["message"] = "Content validation failed"

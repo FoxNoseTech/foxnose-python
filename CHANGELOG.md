@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- `data_validation_error` (HTTP 422) now raises `ContentValidationFailed` instead of a bare `FoxnoseAPIError`. This is the code a Flux resource write returns for a schema violation, so the most common way to hit one was not caught by `except ContentValidationFailed`, and callers had to match on `status_code == 422` instead. The `errors` list and `errors_truncated` flag are populated from the same detail payload as `content_validation_failed`, and `error_code` still reports what the server sent.
-
 ## [0.6.0] - 2026-07-16
 
 ### Added

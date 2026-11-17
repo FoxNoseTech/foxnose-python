@@ -37,6 +37,8 @@ are caught by `except FoxnoseAPIError`, and each exposes typed attributes:
 |-----------|---------------|------------|
 | `SpendCapExceeded` | 402 `spend_cap_reached` | `cap_usd`, `cycle_resets_at`, `raise_cap_url` |
 | `PlanExhausted` | 402 `plan_exhausted` | `axis`, `window_resets_at`, `upgrade_url` |
+| `FilesQuotaExceeded` | 402 `files_quota_exceeded` | `axis`, `reason`, `used_units`, `included_units`, `cap_usd`, `window_resets_at`, `upgrade_url`, `raise_cap_url` |
+| `FilesQuotaUnavailable` | 503 `files_quota_unavailable` | `retry_after` |
 | `PlanLimitExceeded` | 403 `plan_limit_exceeded` | `entity`, `limit`, `current`, `upgrade_url` |
 | `RateLimitExceeded` | 429 `rate_limited` | `retry_after` |
 
@@ -62,6 +64,13 @@ except RateLimitExceeded as e:
 
 `upgrade_url` on `PlanLimitExceeded` may be `None` for entities that have a hard
 ceiling with no higher tier.
+
+`FilesQuotaExceeded` means no file processing units are left. `reason` is
+`spend_cap_reached` with `raise_cap_url`, or a plan reason with `upgrade_url`. A
+refusal relayed by Flux carries the code only, so its attributes are `None`.
+`FilesQuotaUnavailable` means the quota could not be read and nothing started:
+retry after `retry_after` seconds. A paid plan's spend cap on writes raises
+`SpendCapExceeded`.
 
 ### Write errors
 

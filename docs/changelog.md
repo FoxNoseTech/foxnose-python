@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **FoxNose Files** on `ManagementClient` and `AsyncManagementClient`, with typed responses:
+  - Upload links: `list_upload_links`, `create_upload_link`, `get_upload_link`, `revoke_upload_link`.
+  - A record's file: `get_file_analysis`, `approve_file`, `reject_file`, `reanalyze_file`.
+  - Short-lived download links: `get_file_original`, `get_file_safe_copy`, `get_file_page`, and `get_file_page_detail` for one page's image, withheld regions, tables and text.
+  - Collection and environment: `list_file_tombstones`, `get_files_policy`, `update_files_policy`, `list_file_review_queue`.
+- **File uploads** on `FluxClient` and `AsyncFluxClient`: `create_upload_signature` and `get_upload_status`, with `UploadSignature` and `UploadStatus` models. `repr()` of an `UploadSignature` leaves out its credentials.
+- `patch_organization`, `patch_collection` and `patch_component` on both Management clients write only the fields they are given.
+- `get_my_permissions` on both Management clients reads what the caller may do in the environment, with `MyPermissions`, `ContentTypeAccess` and `EnvironmentAccess` models.
+- `RevisionSummary.schema_version_number` and `RevisionSummary.file`.
+- `ResourceSummary` carries `name_is_auto` and `file`, and on a record of a files collection `owner`, `status`, `progress`, `analysis_state`, `thumbnail_url`, `file_info`, `verdict` and `verdict_reasons`.
+- `FileFinding.text_evidence` parses the text a `hidden_text` or `low_legibility_text` finding holds, with `FileTextEvidence.parts` for the text of each zone.
+- `OrganizationSummary.is_verified` and `verification_method`.
+- `FilesQuotaExceeded` (HTTP 402 `files_quota_exceeded`), a subclass of `FoxnoseAPIError`, with `axis`, `reason`, `used_units`, `included_units`, `cap_usd`, `window_resets_at`, `upgrade_url` and `raise_cap_url`.
+- `FilesQuotaUnavailable` (HTTP 503 `files_quota_unavailable`) with `retry_after`.
+- `FileDownloadOptions.origin` (`FileOrigin`): where a record's file came from.
+- `ResourceSummary.guardrails` and `RevisionSummary.guardrails`: the trust summary where the API computes one.
+- `repr()` of the Files models leaves out credentials, signed URLs, a file's own text and an uploader's personal data.
+
+### Changed
+
+- `RevisionSummary.schema_version` is `str | None`: it is `None` when the schema version is gone.
+
 ## [0.8.1] - 2026-09-09
 
 ### Fixed

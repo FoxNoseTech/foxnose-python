@@ -6,7 +6,7 @@ import math
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class SearchMode(str, Enum):
@@ -220,3 +220,66 @@ class SearchRequest(BaseModel):
                 raise ValueError("vector_boost_config is not allowed in hybrid mode")
 
         return self
+
+
+class UploadSignature(BaseModel):
+    """A grant for one upload to a files collection.
+
+    The grant is a credential. ``repr()`` and ``str()`` show only ``upload_id`` and
+    ``token_expire``, and a response that fails to parse does not quote it, so an
+    accidental log line stays clean. Keep it that way: read ``auth_token`` and
+    ``status_token`` only to pass them on.
+
+    Attribute names are snake_case; ``model_dump(by_alias=True)`` gives the wire
+    field names, for handing the grant to a browser.
+    """
+
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, hide_input_in_errors=True
+    )
+
+    public_key: str = Field(alias="publicKey")
+    upload_base_url: str = Field(alias="uploadBaseUrl")
+    auth_token: str = Field(alias="authToken", repr=False)
+    token_expire: int = Field(alias="tokenExpire")
+    store: str
+    metadata: dict[str, Any]
+    upload_id: str
+    status_token: str = Field(repr=False)
+    rotation: int
+
+    def __repr_args__(self) -> list[tuple[str, Any]]:
+        # An allow-list: a field the server adds later must not reach a log line.
+        return [("upload_id", self.upload_id), ("token_expire", self.token_expire)]
+
+
+class UploadFileStatus(BaseModel):
+    """The status of one file of an upload.
+
+    A key sees ``state`` as ``processing``, ``ready`` (with ``record_key``),
+    ``pending_review`` or ``rejected`` (with ``public_reason``). A status token
+    sees ``processing``, ``accepted`` or ``rejected``, with ``user_status``,
+    ``reason`` and ``slot``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    state: str
+    record_key: str | None = None
+    public_reason: str | None = None
+    user_status: str | None = None
+    reason: str | None = None
+    slot: int | None = None
+
+
+class UploadStatus(UploadFileStatus):
+    """The status of an upload.
+
+    For an upload of one file these are that file's fields. For a link of several
+    files, ``state`` is ``processing`` or ``done`` and ``files`` and ``remaining``
+    are set; a status token also gets ``slots_uploading``.
+    """
+
+    files: list[UploadFileStatus] | None = None
+    remaining: int | None = None
+    slots_uploading: list[dict[str, Any]] | None = None

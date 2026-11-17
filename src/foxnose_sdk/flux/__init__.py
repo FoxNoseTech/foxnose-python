@@ -3,6 +3,9 @@ from .models import (
     HybridConfig,
     SearchMode,
     SearchRequest,
+    UploadFileStatus,
+    UploadSignature,
+    UploadStatus,
     VectorBoostConfig,
     VectorFieldSearch,
     VectorSearch,
@@ -17,4 +20,7 @@ __all__ = [
     "VectorBoostConfig",
     "HybridConfig",
     "SearchRequest",
+    "UploadSignature",
+    "UploadStatus",
+    "UploadFileStatus",
 ]

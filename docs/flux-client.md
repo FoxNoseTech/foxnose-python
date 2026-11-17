@@ -319,6 +319,66 @@ docs and the live API disagree on this in at least two ways that are still
 open with the API team (Get Resource at level 0; Search never appears in
 `read_methods` at any level).
 
+## File Uploads
+
+These calls work on a files collection. For a strict collection, the path names the owner.
+
+```python
+path = "tickets/tk_8f2c91/attachments"
+
+grant = client.create_upload_signature(path)
+status = client.get_upload_status(path, grant.upload_id)
+
+if status.state == "ready":
+    resource = client.get_resource(path, status.record_key)
+```
+
+### Upload Signature
+
+`create_upload_signature` needs a key with create access and returns one grant:
+
+| Attribute | Wire name | Meaning |
+|---|---|---|
+| `public_key` | `publicKey` | The upload project's public key |
+| `upload_base_url` | `uploadBaseUrl` | The upload host |
+| `auth_token` | `authToken` | The token for this upload |
+| `token_expire` | `tokenExpire` | When the token ends, in Unix seconds |
+| `store` | `store` | Passed to the upload unchanged |
+| `metadata` | `metadata` | Passed to the upload unchanged |
+| `upload_id` | `upload_id` | The id to poll |
+| `status_token` | `status_token` | The end user's token for reading the status |
+| `rotation` | `rotation` | The order of status tokens in a session |
+
+Upload the file with an Uploadcare upload client pointed at `upload_base_url`, with `public_key`, `auth_token`, `store` and `metadata` unchanged. `grant.model_dump(by_alias=True)` gives the wire names, for handing the grant to a browser.
+
+The grant is a credential. `repr()` and `str()` show only `upload_id` and `token_expire`, and the SDK never logs it. Keep it out of your own logs.
+
+`session_key` is an optional idempotency key of 43 URL-safe characters. A repeat with the same key, collection and owner reaches the same upload session. The SDK does not resend this request by itself, so send a `session_key` when you retry.
+
+### Upload Status
+
+A key reads only the uploads that key started, through a path that names the same collection and owner. Any other combination is `404 not_found`, which includes a link made through the Management API: read that one with `ManagementClient.get_upload_link`.
+
+| `state` | Meaning |
+|---|---|
+| `processing` | The file is being scanned or analysed |
+| `ready` | The file is published; `record_key` is its record |
+| `pending_review` | A reviewer must approve the file |
+| `rejected` | The file is not accepted; `public_reason` says why |
+
+For a link of several files, `state` is `processing` or `done`, and `files` and `remaining` are set.
+
+A client with no key, such as an end user's device, reads the end user's view with the `status_token`. It never carries a record key:
+
+```python
+from foxnose_sdk.auth import AnonymousAuth
+
+client = FluxClient(base_url=base_url, api_prefix="support", auth=AnonymousAuth())
+status = client.get_upload_status(path, upload_id, status_token=status_token)
+```
+
+Status reads are rate limited. Over the limit, the SDK waits for `Retry-After` and retries, then raises `RateLimitExceeded`.
+
 ## Error Handling
 
 ```python

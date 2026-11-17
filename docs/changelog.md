@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Outbound webhooks** on `ManagementClient` and `AsyncManagementClient`, with typed responses:
+  - Endpoints: `list_webhook_endpoints` (items carry `stats_24h`), `create_webhook_endpoint`, `get_webhook_endpoint`, `update_webhook_endpoint`, `delete_webhook_endpoint`, `list_webhook_endpoint_deliveries`.
+  - Signing secrets: `get_webhook_endpoint_secret`, `rotate_webhook_endpoint_secret`.
+  - Test and recovery: `send_webhook_test_event`, `recover_webhook_deliveries`.
+  - Event log: `list_webhook_events`, `get_webhook_event`, `list_webhook_event_attempts`, `redeliver_webhook_event`, and `list_webhook_event_types` for the catalogue with JSON Schemas.
+- `WebhookEndpointNotFound` (404 `webhook_endpoint_not_found`), `WebhookEventNotFound` (404 `webhook_event_not_found`), `WebhookEndpointLimitExceeded` (409 `limit_exceeded`), `WebhookEndpointNotActive` (409 `endpoint_not_active`, with `reason` and `skipped` for a redelivery) and `WebhookEndpointNotSubscribed` (409 `endpoint_not_subscribed`, with `skipped` for a redelivery), subclasses of `FoxnoseAPIError`.
+- `repr()` of the secret models leaves out the signing secret, and so does a response that fails to parse. The SDK does not verify signatures: deliveries follow Standard Webhooks, so use a Standard Webhooks library.
+
 ## [0.9.0] - 2026-11-17
 
 ### Added

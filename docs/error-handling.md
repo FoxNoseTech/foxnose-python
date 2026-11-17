@@ -83,6 +83,11 @@ subclasses of `FoxnoseAPIError`:
 | `ExternalIdConflict` | 409 `external_id_conflict` | The supplied `key` already identifies a resource. |
 | `ContentValidationFailed` | 422 `content_validation_failed` | Exposes `errors` (each with a `json_path`) and `errors_truncated`. |
 | `UpstreamError` | 502 `upstream_error` | The write's outcome is unknown — verify with a GET before retrying. |
+| `WebhookEndpointNotFound` | 404 `webhook_endpoint_not_found` | No endpoint with this id in the environment. |
+| `WebhookEventNotFound` | 404 `webhook_event_not_found` | No such event within the last 30 days. |
+| `WebhookEndpointLimitExceeded` | 409 `limit_exceeded` | The environment already has 20 webhook endpoints. |
+| `WebhookEndpointNotActive` | 409 `endpoint_not_active` | The endpoint is paused, disabled or deleted. `reason` is set when a redelivery names the endpoint, and `skipped` when a redelivery without `endpoint_id` finds none to send to. |
+| `WebhookEndpointNotSubscribed` | 409 `endpoint_not_subscribed` | The endpoint's event types or collection filter do not cover the event. `skipped` is set when a redelivery without `endpoint_id` finds only endpoints that do not cover the event. |
 
 ```python
 from foxnose_sdk import (

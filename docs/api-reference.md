@@ -384,6 +384,62 @@ from foxnose_sdk import FolderRef, ResourceRef, RevisionRef
       heading_level: 4
       members: false
 
+### Webhooks
+
+::: foxnose_sdk.management.models.WebhookEndpoint
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookEndpointCreated
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookSecretRotation
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookEndpointDelivery
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookEvent
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookEventDetail
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookAttempt
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookRedeliveryResult
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.WebhookEventType
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
 ### Permissions
 
 ::: foxnose_sdk.management.models.MyPermissions

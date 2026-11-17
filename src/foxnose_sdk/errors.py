@@ -172,6 +172,56 @@ class ContentValidationFailed(FoxnoseAPIError):
         self.errors_truncated = errors_truncated
 
 
+class WebhookEndpointNotFound(FoxnoseAPIError):
+    """Raised on HTTP 404 ``webhook_endpoint_not_found`` — no endpoint with this id
+    in the environment."""
+
+
+class WebhookEventNotFound(FoxnoseAPIError):
+    """Raised on HTTP 404 ``webhook_event_not_found`` — no such event in the
+    environment within the last 30 days."""
+
+
+class WebhookEndpointLimitExceeded(FoxnoseAPIError):
+    """Raised on HTTP 409 ``limit_exceeded`` — the environment already has the
+    most webhook endpoints it can have (20)."""
+
+
+class WebhookEndpointNotActive(FoxnoseAPIError):
+    """Raised on HTTP 409 ``endpoint_not_active`` — the endpoint is paused,
+    disabled or deleted, so a test event, a recovery or a redelivery cannot go to it.
+
+    A redelivery adds detail: ``reason`` is the endpoint's state (``paused``,
+    ``disabled`` or ``deleted``) when ``endpoint_id`` named it, and ``skipped`` lists
+    the endpoints a redelivery without ``endpoint_id`` passed over, each with
+    ``endpoint_id`` and ``reason``. Other calls leave both empty.
+    """
+
+    def __init__(
+        self,
+        *,
+        reason: str | None = None,
+        skipped: list | None = None,
+        **base_kwargs: Any,
+    ) -> None:
+        super().__init__(**base_kwargs)
+        self.reason = reason
+        self.skipped = skipped or []
+
+
+class WebhookEndpointNotSubscribed(FoxnoseAPIError):
+    """Raised on HTTP 409 ``endpoint_not_subscribed`` — the endpoint's current
+    event types or collection filter do not cover the event.
+
+    ``skipped`` lists the endpoints a redelivery without ``endpoint_id`` passed
+    over, each with ``endpoint_id`` and ``reason``.
+    """
+
+    def __init__(self, *, skipped: list | None = None, **base_kwargs: Any) -> None:
+        super().__init__(**base_kwargs)
+        self.skipped = skipped or []
+
+
 class UpstreamError(FoxnoseAPIError):
     """Raised on HTTP 502 ``upstream_error`` — a write could not be confirmed.
 
@@ -331,6 +381,41 @@ def build_api_error(
             base_kwargs["message"] = "Content validation failed"
         return ContentValidationFailed(
             errors=errors, errors_truncated=truncated, **base_kwargs
+        )
+
+    if status_code == 404 and error_code == "webhook_endpoint_not_found":
+        if not message:
+            base_kwargs["message"] = "Webhook endpoint not found"
+        return WebhookEndpointNotFound(**base_kwargs)
+
+    if status_code == 404 and error_code == "webhook_event_not_found":
+        if not message:
+            base_kwargs["message"] = "Webhook event not found"
+        return WebhookEventNotFound(**base_kwargs)
+
+    if status_code == 409 and error_code == "limit_exceeded":
+        if not message:
+            base_kwargs["message"] = "Webhook endpoint limit reached"
+        return WebhookEndpointLimitExceeded(**base_kwargs)
+
+    if status_code == 409 and error_code == "endpoint_not_active":
+        detail_obj = detail if isinstance(detail, dict) else {}
+        skipped = detail_obj.get("skipped")
+        if not message:
+            base_kwargs["message"] = "The webhook endpoint is not active"
+        return WebhookEndpointNotActive(
+            reason=detail_obj.get("reason"),
+            skipped=skipped if isinstance(skipped, list) else None,
+            **base_kwargs,
+        )
+
+    if status_code == 409 and error_code == "endpoint_not_subscribed":
+        detail_obj = detail if isinstance(detail, dict) else {}
+        skipped = detail_obj.get("skipped")
+        if not message:
+            base_kwargs["message"] = "The endpoint is not subscribed to the event"
+        return WebhookEndpointNotSubscribed(
+            skipped=skipped if isinstance(skipped, list) else None, **base_kwargs
         )
 
     if status_code == 502 and error_code == "upstream_error":

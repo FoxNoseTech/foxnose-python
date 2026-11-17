@@ -722,6 +722,85 @@ tombstones = client.list_file_tombstones("attachments", params={"limit": 20})
 
 `update_files_policy` takes a `FilesPolicyBody` or a mapping and replaces the policy: an omitted field takes its default. `version` is `None` while the collection runs on the default policy.
 
+## Webhooks
+
+An endpoint is a URL that receives a signed `POST` when a subscribed event happens in the environment. The calls need the `webhooks` permission: `read` to list and read, `create`, `update` for every action on an endpoint, `delete`.
+
+### Endpoints
+
+```python
+from datetime import datetime, timedelta, timezone
+
+endpoint = client.create_webhook_endpoint(
+    url="https://hooks.example.com/foxnose",
+    event_types=["revision.published", "resource.deleted"],
+    collection_keys=["mK8nP3tYvBcX"],  # omit for every collection
+    payload_mode="content",            # or "references" (the default)
+)
+store_secret(endpoint.secret)  # also readable later with get_webhook_endpoint_secret
+
+client.send_webhook_test_event(endpoint.id, "revision.published")
+
+# After an outage: send the failed deliveries of the last day again.
+since = datetime.now(timezone.utc) - timedelta(days=1)
+while True:
+    result = client.recover_webhook_deliveries(endpoint.id, since=since)
+    if not result.more:
+        break
+
+# Or send one logged event to one endpoint again.
+client.redeliver_webhook_event("evt_01JCX3Q9W2B5V7RZ0D4K6M8P1T", endpoint_id=endpoint.id)
+```
+
+`create_webhook_endpoint` needs `url` and `event_types`; `collection_keys` takes keys or collection models. `update_webhook_endpoint` sends only the fields given, and `status="active"` resumes a paused or disabled endpoint. `list_webhook_endpoints` takes `status`, `limit` (at most 200) and `offset` in `params`; each item carries `stats_24h` (`attempts` and `succeeded` of the last 24 hours).
+
+### Secrets
+
+```python
+current = client.get_webhook_endpoint_secret(endpoint.id)
+rotation = client.rotate_webhook_endpoint_secret(endpoint.id)
+print(rotation.previous_secret_expires_at)  # the old secret signs for 24 hours
+client.rotate_webhook_endpoint_secret(endpoint.id, expire_previous_now=True)
+```
+
+`secret` of an endpoint is a credential: `repr()` of the secret models leaves it out, and it should stay out of logs. A response that fails to parse does not quote it either.
+
+### Verifying a delivery
+
+Deliveries follow [Standard Webhooks](https://www.standardwebhooks.com/), so the SDK has no verifier of its own: use a Standard Webhooks library with the endpoint's secret.
+
+```python
+# pip install standardwebhooks
+from standardwebhooks.webhooks import Webhook
+
+event = Webhook(secret).verify(request_body, request_headers)  # raises on a bad signature
+```
+
+### Event Log
+
+```python
+events = client.list_webhook_events(params={"type": "revision.published", "after": "2026-11-10T00:00:00Z"})
+detail = client.get_webhook_event(events.results[0].id)  # envelope and deliveries
+attempts = client.list_webhook_event_attempts(detail.id)
+
+deliveries = client.list_webhook_endpoint_deliveries(endpoint.id)
+types = client.list_webhook_event_types()  # with the JSON Schema of each payload mode
+```
+
+`list_webhook_events` takes `type`, `endpoint`, `status` (`pending`, `succeeded` or `dead`), `test`, `after`, `before`, `limit` and `offset` in `params`. The log keeps 30 days. `redeliver_webhook_event` returns the new `deliveries` and the endpoints it `skipped`. `response_excerpt` of an attempt is left out of `repr()`.
+
+### Webhook Errors
+
+| Exception | Status / code |
+|---|---|
+| `WebhookEndpointNotFound` | 404 `webhook_endpoint_not_found` |
+| `WebhookEventNotFound` | 404 `webhook_event_not_found` |
+| `WebhookEndpointLimitExceeded` | 409 `limit_exceeded` (20 endpoints per environment) |
+| `WebhookEndpointNotActive` | 409 `endpoint_not_active`; a redelivery adds `reason` or `skipped` |
+| `WebhookEndpointNotSubscribed` | 409 `endpoint_not_subscribed`; a redelivery without `endpoint_id` adds `skipped` |
+
+A rejected request body is a `400` `FoxnoseAPIError`: `error_code` is the code (`invalid_url`, `unknown_event_type`, `unknown_collection`, ...) and `detail` says what is wrong when there is something to say: `field`, and for example `unknown` or `reason`.
+
 ## My Permissions
 
 `get_my_permissions` says what the authenticated caller may do in the environment. It works for a user token and for a Management API key of this environment.

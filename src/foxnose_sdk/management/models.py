@@ -1326,4 +1326,262 @@ __all__ = [
     "EnvironmentAccess",
     "ContentTypeAccess",
     "MyPermissions",
+    "WebhookStats24h",
+    "WebhookEndpoint",
+    "WebhookEndpointList",
+    "WebhookEndpointCreated",
+    "WebhookSecret",
+    "WebhookSecretRotation",
+    "WebhookEndpointRef",
+    "WebhookDelivery",
+    "WebhookDeliveryEvent",
+    "WebhookEndpointDelivery",
+    "WebhookEndpointDeliveryList",
+    "WebhookDeliveryCounts",
+    "WebhookEvent",
+    "WebhookEventList",
+    "WebhookEventDetail",
+    "WebhookAttempt",
+    "WebhookAttemptList",
+    "WebhookTestEvent",
+    "WebhookRecovery",
+    "WebhookRedelivery",
+    "WebhookSkippedEndpoint",
+    "WebhookRedeliveryResult",
+    "WebhookEventSchemas",
+    "WebhookEventType",
+    "WebhookEventTypeList",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# Webhooks
+# --------------------------------------------------------------------------- #
+
+
+class _WebhookModel(BaseModel):
+    """Base of the webhook response models: a field the server adds is kept."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class WebhookStats24h(_WebhookModel):
+    """Attempts of the last 24 hours: all of them and those answered with ``2xx``."""
+
+    attempts: int
+    succeeded: int
+
+
+class WebhookEndpoint(_WebhookModel):
+    """A webhook endpoint. It never carries the signing secret.
+
+    ``status`` is ``active``, ``paused`` or ``disabled``; ``disabled_reason`` is
+    ``gone`` or ``failing`` for a disabled endpoint. ``stats_24h`` is set on the
+    items of a list only.
+    """
+
+    id: str
+    url: str
+    description: str = ""
+    event_types: list[str]
+    collection_keys: list[str] = []
+    payload_mode: str
+    version: int
+    status: str
+    disabled_reason: str | None = None
+    failing_since: datetime | None = None
+    disabled_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    stats_24h: WebhookStats24h | None = None
+
+
+WebhookEndpointList = PaginatedResponse[WebhookEndpoint]
+
+
+class WebhookEndpointCreated(WebhookEndpoint):
+    """The answer to creating an endpoint: the endpoint and its signing secret.
+
+    ``secret`` is left out of ``repr()``, and a response that fails to parse does
+    not quote it. Read it again later with ``get_webhook_endpoint_secret``.
+    """
+
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+
+    secret: str = Field(repr=False)
+
+
+class WebhookSecret(_WebhookModel):
+    """The current signing secret of an endpoint, left out of ``repr()``."""
+
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+
+    secret: str | None = Field(default=None, repr=False)
+
+
+class WebhookSecretRotation(_WebhookModel):
+    """The answer to rotating a secret.
+
+    ``previous_secret_expires_at`` is when the old secret stops being used, or
+    ``None`` when none is left. ``secret`` is left out of ``repr()``.
+    """
+
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+
+    secret: str = Field(repr=False)
+    previous_secret_expires_at: datetime | None = None
+
+
+class WebhookEndpointRef(_WebhookModel):
+    """The endpoint of a delivery or an attempt; ``deleted`` once it was removed."""
+
+    id: str
+    deleted: bool = False
+
+
+class WebhookDelivery(_WebhookModel):
+    """One event sent to one endpoint, with all its attempts.
+
+    ``status`` is ``pending``, ``succeeded`` or ``dead``. ``next_attempt_at`` is
+    set only while the delivery is pending.
+    """
+
+    id: str
+    endpoint: WebhookEndpointRef
+    status: str
+    attempts: int
+    last_status_code: int | None = None
+    last_error: str | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+    next_attempt_at: datetime | None = None
+
+
+class WebhookDeliveryEvent(_WebhookModel):
+    """The event a delivery carries."""
+
+    id: str
+    type: str
+    test: bool = False
+
+
+class WebhookEndpointDelivery(WebhookDelivery):
+    """A delivery in an endpoint's delivery list. ``event`` is ``None`` once the
+    event has aged out of the 30-day history."""
+
+    event_id: str
+    event: WebhookDeliveryEvent | None = None
+
+
+WebhookEndpointDeliveryList = PaginatedResponse[WebhookEndpointDelivery]
+
+
+class WebhookDeliveryCounts(_WebhookModel):
+    """How many deliveries of an event are in each status."""
+
+    pending: int = 0
+    succeeded: int = 0
+    dead: int = 0
+
+
+class WebhookEvent(_WebhookModel):
+    """An event of the log. ``delivery_counts`` is set on the items of a list only."""
+
+    id: str
+    type: str
+    created_at: datetime
+    test: bool = False
+    collection_key: str | None = None
+    delivery_counts: WebhookDeliveryCounts | None = None
+
+
+WebhookEventList = PaginatedResponse[WebhookEvent]
+
+
+class WebhookEventDetail(WebhookEvent):
+    """One event with its envelope and all its deliveries, oldest first.
+
+    ``envelope`` is the event as a references-only endpoint receives it; the log
+    never returns content snapshots.
+    """
+
+    envelope: dict[str, Any]
+    deliveries: list[WebhookDelivery] = []
+
+
+class WebhookAttempt(_WebhookModel):
+    """One try to deliver an event. ``response_excerpt`` is the first 1 KB of what
+    the endpoint answered and is left out of ``repr()``."""
+
+    id: str
+    delivery_id: str
+    endpoint: WebhookEndpointRef
+    created_at: datetime
+    status_code: int | None = None
+    latency_ms: int | None = None
+    error_class: str | None = None
+    response_excerpt: str = Field(default="", repr=False)
+
+
+WebhookAttemptList = PaginatedResponse[WebhookAttempt]
+
+
+class WebhookTestEvent(_WebhookModel):
+    """The answer to sending a test event."""
+
+    event_id: str
+    delivery_id: str
+
+
+class WebhookRecovery(_WebhookModel):
+    """The answer to recovering failed deliveries: ``requeued`` were queued, and
+    ``more`` is true when another call with the same ``since`` has more to do."""
+
+    requeued: int
+    more: bool
+
+
+class WebhookRedelivery(_WebhookModel):
+    """A delivery created by redelivering an event."""
+
+    id: str
+    endpoint_id: str
+
+
+class WebhookSkippedEndpoint(_WebhookModel):
+    """An endpoint an event was not redelivered to. ``reason`` is ``deleted``,
+    ``paused``, ``disabled`` or ``endpoint_not_subscribed``."""
+
+    endpoint_id: str
+    reason: str
+
+
+class WebhookRedeliveryResult(_WebhookModel):
+    """The answer to redelivering an event."""
+
+    event_id: str
+    deliveries: list[WebhookRedelivery] = []
+    skipped: list[WebhookSkippedEndpoint] = []
+
+
+class WebhookEventSchemas(_WebhookModel):
+    """The JSON Schemas (draft 2020-12) of an event's ``data`` per payload mode."""
+
+    references: dict[str, Any]
+    content: dict[str, Any]
+
+
+class WebhookEventType(_WebhookModel):
+    """An event type of the catalogue. ``collection_scoped`` is true when every
+    event of the type belongs to a collection."""
+
+    name: str
+    description: str
+    collection_scoped: bool
+    schemas: WebhookEventSchemas
+
+
+class WebhookEventTypeList(_WebhookModel):
+    """The event-type catalogue; it is not paginated."""
+
+    results: list[WebhookEventType]

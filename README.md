@@ -19,6 +19,7 @@ This is the official Python SDK for FoxNose Management and Flux APIs.
 - **JWT authentication** - Built-in token refresh support
 - **Flux introspection** - Discover routes and live schema via `/_router` and `/_schema`
 - **FoxNose Files** - Upload links, analysis, review, policy and short-lived downloads
+- **Outbound webhooks** - Endpoints, signing secrets, the event log, redelivery and recovery
 
 ## Documentation
 
@@ -189,6 +190,56 @@ client.update_resource("blog-posts", created["resource_key"], {"title": "Hello (
 
 client.close()
 ```
+
+### Webhooks
+
+FoxNose sends a signed `POST` to your endpoint when a subscribed event happens. Endpoints and the event log run through the Management client, in sync and async alike.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+endpoint = client.create_webhook_endpoint(
+    url="https://hooks.example.com/foxnose",
+    event_types=["revision.published", "resource.deleted"],
+    collection_keys=["mK8nP3tYvBcX"],  # omit for every collection
+    payload_mode="content",            # or "references" (the default)
+)
+store_secret(endpoint.secret)  # also readable later with get_webhook_endpoint_secret
+
+client.send_webhook_test_event(endpoint.id, "revision.published")
+
+# After an outage: send the failed deliveries of the last day again.
+since = datetime.now(timezone.utc) - timedelta(days=1)
+while True:
+    result = client.recover_webhook_deliveries(endpoint.id, since=since)
+    if not result.more:
+        break
+
+# Or send one logged event to one endpoint again.
+client.redeliver_webhook_event("evt_01JCX3Q9W2B5V7RZ0D4K6M8P1T", endpoint_id=endpoint.id)
+```
+
+| Call | What it does |
+|---|---|
+| `list_webhook_endpoints` / `create_webhook_endpoint` / `get_webhook_endpoint` / `update_webhook_endpoint` / `delete_webhook_endpoint` | Endpoints of the environment; a list carries `stats_24h` |
+| `list_webhook_endpoint_deliveries` | An endpoint's deliveries, each with the event it carries |
+| `get_webhook_endpoint_secret` / `rotate_webhook_endpoint_secret` | Read or replace the signing secret |
+| `send_webhook_test_event` | A sample event to one endpoint |
+| `recover_webhook_deliveries` | Send an endpoint's failed deliveries again |
+| `list_webhook_events` / `get_webhook_event` / `list_webhook_event_attempts` | The 30-day event log |
+| `redeliver_webhook_event` | Send a logged event again |
+| `list_webhook_event_types` | The event-type catalogue with JSON Schemas |
+
+Deliveries follow [Standard Webhooks](https://www.standardwebhooks.com/), so the SDK has no verifier of its own: use a Standard Webhooks library with the endpoint's secret.
+
+```python
+# pip install standardwebhooks
+from standardwebhooks.webhooks import Webhook
+
+event = Webhook(secret).verify(request_body, request_headers)  # raises on a bad signature
+```
+
+`secret` of an endpoint is a credential: `repr()` of the secret models leaves it out, and it should stay out of logs. See the [Management client guide](https://foxnose-python.readthedocs.io/en/latest/management-client/#webhooks).
 
 ### Files
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+from datetime import datetime
 from collections.abc import Callable, Sequence
 from typing import Any, Mapping, Union
 from urllib.parse import quote
@@ -70,6 +71,19 @@ from .models import (
     UploadLink,
     UploadLinkCreated,
     UploadLinkList,
+    WebhookAttemptList,
+    WebhookEndpoint,
+    WebhookEndpointCreated,
+    WebhookEndpointDeliveryList,
+    WebhookEndpointList,
+    WebhookEventDetail,
+    WebhookEventList,
+    WebhookEventTypeList,
+    WebhookRecovery,
+    WebhookRedeliveryResult,
+    WebhookSecret,
+    WebhookSecretRotation,
+    WebhookTestEvent,
 )
 
 
@@ -116,6 +130,40 @@ def _files_policy_body(payload: FilesPolicyBody | Mapping[str, Any]) -> Any:
     if isinstance(payload, FilesPolicyBody):
         return payload.model_dump(exclude_none=True)
     return payload
+
+
+def _webhook_endpoint_body(
+    *,
+    url: str | None,
+    event_types: Sequence[str] | None,
+    description: str | None,
+    collection_keys: Sequence[CollectionRef] | None,
+    payload_mode: str | None,
+    version: int | None,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """Build the body of an endpoint create or update, leaving out what was not given."""
+    body: dict[str, Any] = {}
+    if url is not None:
+        body["url"] = url
+    if event_types is not None:
+        body["event_types"] = list(event_types)
+    if description is not None:
+        body["description"] = description
+    if collection_keys is not None:
+        body["collection_keys"] = [_resolve_key(key) for key in collection_keys]
+    if payload_mode is not None:
+        body["payload_mode"] = payload_mode
+    if version is not None:
+        body["version"] = version
+    if status is not None:
+        body["status"] = status
+    return body
+
+
+def _iso_datetime(value: datetime | str) -> str:
+    """A ``datetime`` as ISO 8601; a string is passed through as it is."""
+    return value.isoformat() if isinstance(value, datetime) else value
 
 
 def _coerce_list_payload(payload: Any) -> list[Any]:
@@ -288,6 +336,16 @@ class _ManagementPathsMixin:
 
     def _my_permissions_root(self) -> str:
         return f"/v1/{self.environment_key}/permissions/me"
+
+    # Webhooks paths
+    def _webhooks_root(self) -> str:
+        return f"/v1/{self.environment_key}/webhooks"
+
+    def _webhook_endpoint_root(self, endpoint_id: str) -> str:
+        return f"{self._webhooks_root()}/endpoints/{quote(endpoint_id, safe='')}"
+
+    def _webhook_event_root(self, event_id: str) -> str:
+        return f"{self._webhooks_root()}/events/{quote(event_id, safe='')}"
 
     # Management API key paths
     def _management_api_keys_root(self) -> str:
@@ -3333,6 +3391,281 @@ class ManagementClient(_ManagementPathsMixin):
         data = self.request("GET", f"{self._files_review_root()}/", params=query)
         return FileReviewQueue.model_validate(data)
 
+    # ------------------------------------------------------------------ #
+    # Webhooks
+    # ------------------------------------------------------------------ #
+
+    def list_webhook_endpoints(
+        self, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookEndpointList:
+        """List the environment's webhook endpoints, newest first.
+
+        Each item carries ``stats_24h``. Secrets are never included.
+
+        Args:
+            params: Optional ``status`` (``active``, ``paused`` or ``disabled``),
+                ``limit`` (at most 200) and ``offset``.
+        """
+        data = self.request("GET", f"{self._webhooks_root()}/endpoints/", params=params)
+        return WebhookEndpointList.model_validate(data)
+
+    def create_webhook_endpoint(
+        self,
+        *,
+        url: str,
+        event_types: Sequence[str],
+        description: str | None = None,
+        collection_keys: Sequence[CollectionRef] | None = None,
+        payload_mode: str | None = None,
+        version: int | None = None,
+    ) -> WebhookEndpointCreated:
+        """Create a webhook endpoint.
+
+        The answer carries the signing ``secret``; read it again later with
+        :meth:`get_webhook_endpoint_secret`. An environment holds at most 20
+        endpoints (``WebhookEndpointLimitExceeded``). A ``content`` endpoint also
+        needs read access to the content it will deliver.
+
+        Args:
+            url: The ``https`` URL deliveries are sent to.
+            event_types: Event types to receive, at least one. See
+                :meth:`list_webhook_event_types`.
+            description: Free text, at most 255 characters.
+            collection_keys: Collections to receive events from, at most 50. Empty
+                or omitted for every collection.
+            payload_mode: ``references`` (the default) or ``content``.
+            version: Payload version; ``1`` is the only one.
+        """
+        body = _webhook_endpoint_body(
+            url=url,
+            event_types=event_types,
+            description=description,
+            collection_keys=collection_keys,
+            payload_mode=payload_mode,
+            version=version,
+        )
+        data = self._transport.request(
+            "POST",
+            f"{self._webhooks_root()}/endpoints/",
+            json_body=body,
+            allow_retries=False,
+        )
+        return WebhookEndpointCreated.model_validate(data)
+
+    def get_webhook_endpoint(self, endpoint_id: str) -> WebhookEndpoint:
+        """Read one webhook endpoint. It carries neither the secret nor ``stats_24h``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        data = self.request("GET", f"{self._webhook_endpoint_root(endpoint_id)}/")
+        return WebhookEndpoint.model_validate(data)
+
+    def update_webhook_endpoint(
+        self,
+        endpoint_id: str,
+        *,
+        url: str | None = None,
+        event_types: Sequence[str] | None = None,
+        description: str | None = None,
+        collection_keys: Sequence[CollectionRef] | None = None,
+        payload_mode: str | None = None,
+        version: int | None = None,
+        status: str | None = None,
+    ) -> WebhookEndpoint:
+        """Change the given fields of an endpoint and leave the rest alone.
+
+        ``status`` accepts ``active`` or ``paused``. Setting ``active`` on a paused
+        or disabled endpoint resumes it and clears its failure streak; events that
+        happened meanwhile are not sent, but failed deliveries can be sent again
+        with :meth:`recover_webhook_deliveries`.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        body = _webhook_endpoint_body(
+            url=url,
+            event_types=event_types,
+            description=description,
+            collection_keys=collection_keys,
+            payload_mode=payload_mode,
+            version=version,
+            status=status,
+        )
+        data = self.request(
+            "PATCH", f"{self._webhook_endpoint_root(endpoint_id)}/", json_body=body
+        )
+        return WebhookEndpoint.model_validate(data)
+
+    def delete_webhook_endpoint(self, endpoint_id: str) -> None:
+        """Delete an endpoint and its pending deliveries.
+
+        Its finished deliveries and attempts stay in the event log for 30 days,
+        with ``endpoint.deleted`` true.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        self.request(
+            "DELETE", f"{self._webhook_endpoint_root(endpoint_id)}/", parse_json=False
+        )
+
+    def list_webhook_endpoint_deliveries(
+        self, endpoint_id: str, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookEndpointDeliveryList:
+        """List an endpoint's deliveries, newest first, each with the event it carries.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            params: Optional ``limit`` (at most 200) and ``offset``.
+        """
+        data = self.request(
+            "GET",
+            f"{self._webhook_endpoint_root(endpoint_id)}/deliveries/",
+            params=params,
+        )
+        return WebhookEndpointDeliveryList.model_validate(data)
+
+    def get_webhook_endpoint_secret(self, endpoint_id: str) -> WebhookSecret:
+        """Read the endpoint's current signing secret: the newest, during a rotation.
+
+        Needs ``webhooks:update``. The secret is left out of ``repr()``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        data = self.request(
+            "GET", f"{self._webhook_endpoint_root(endpoint_id)}/secret/"
+        )
+        return WebhookSecret.model_validate(data)
+
+    def rotate_webhook_endpoint_secret(
+        self, endpoint_id: str, *, expire_previous_now: bool = False
+    ) -> WebhookSecretRotation:
+        """Create a new signing secret and return it.
+
+        The previous secret stays valid for 24 hours, and deliveries carry a
+        signature for each valid secret; with ``expire_previous_now`` it stops at
+        once. Needs ``webhooks:update``. The secret is left out of ``repr()``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            expire_previous_now: Stop signing with the previous secret immediately.
+        """
+        data = self._transport.request(
+            "POST",
+            f"{self._webhook_endpoint_root(endpoint_id)}/secret/rotate/",
+            json_body={"expire_previous_now": expire_previous_now},
+            allow_retries=False,
+        )
+        return WebhookSecretRotation.model_validate(data)
+
+    def send_webhook_test_event(
+        self, endpoint_id: str, event_type: str
+    ) -> WebhookTestEvent:
+        """Send a sample event to this endpoint only, with ``test`` true in the envelope.
+
+        It is sent whatever the endpoint's event types and collection filter, but
+        the endpoint must be active (``WebhookEndpointNotActive``).
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            event_type: Any type of the catalogue.
+        """
+        data = self._transport.request(
+            "POST",
+            f"{self._webhook_endpoint_root(endpoint_id)}/test/",
+            json_body={"event_type": event_type},
+            allow_retries=False,
+        )
+        return WebhookTestEvent.model_validate(data)
+
+    def recover_webhook_deliveries(
+        self, endpoint_id: str, *, since: datetime | str
+    ) -> WebhookRecovery:
+        """Send again the endpoint's failed deliveries created at or after ``since``.
+
+        Each becomes a new pending delivery of the same event. One call queues at
+        most 10,000 deliveries; when ``more`` is true, call again with the same
+        ``since``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            since: ISO 8601 time within the last 30 days; a time without a zone is
+                read as UTC.
+        """
+        data = self._transport.request(
+            "POST",
+            f"{self._webhook_endpoint_root(endpoint_id)}/recover/",
+            json_body={"since": _iso_datetime(since)},
+            allow_retries=False,
+        )
+        return WebhookRecovery.model_validate(data)
+
+    def list_webhook_events(
+        self, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookEventList:
+        """List the events of the last 30 days, newest first, with ``delivery_counts``.
+
+        Args:
+            params: Optional ``type``, ``endpoint`` (an endpoint ``id``), ``status``
+                (``pending``, ``succeeded`` or ``dead``), ``test`` (``true`` or
+                ``false``), ``after``, ``before`` (ISO 8601), ``limit`` (at most
+                200) and ``offset``.
+        """
+        data = self.request("GET", f"{self._webhooks_root()}/events/", params=params)
+        return WebhookEventList.model_validate(data)
+
+    def get_webhook_event(self, event_id: str) -> WebhookEventDetail:
+        """Read one event with its envelope and all its deliveries, oldest first.
+
+        Args:
+            event_id: The event's ``id``, for example ``evt_01JCX3Q9W2B5V7RZ0D4K6M8P1T``.
+        """
+        data = self.request("GET", f"{self._webhook_event_root(event_id)}/")
+        return WebhookEventDetail.model_validate(data)
+
+    def list_webhook_event_attempts(
+        self, event_id: str, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookAttemptList:
+        """List every attempt to deliver the event, across endpoints, oldest first.
+
+        Args:
+            event_id: The event's ``id``.
+            params: Optional ``limit`` (at most 200) and ``offset``.
+        """
+        data = self.request(
+            "GET", f"{self._webhook_event_root(event_id)}/attempts/", params=params
+        )
+        return WebhookAttemptList.model_validate(data)
+
+    def redeliver_webhook_event(
+        self, event_id: str, *, endpoint_id: str | None = None
+    ) -> WebhookRedeliveryResult:
+        """Send the event again as a new delivery, with the same event ``id``.
+
+        With ``endpoint_id`` the event goes to that endpoint. Without it, the event
+        goes to every endpoint that had a delivery of it and is active and
+        subscribed to it now; the others are listed in ``skipped``.
+
+        Args:
+            event_id: The event's ``id``.
+            endpoint_id: Redeliver to this endpoint only.
+        """
+        body = {"endpoint_id": endpoint_id} if endpoint_id is not None else {}
+        data = self._transport.request(
+            "POST",
+            f"{self._webhook_event_root(event_id)}/redeliver/",
+            json_body=body,
+            allow_retries=False,
+        )
+        return WebhookRedeliveryResult.model_validate(data)
+
+    def list_webhook_event_types(self) -> WebhookEventTypeList:
+        """List the event-type catalogue with the JSON Schema of each payload mode."""
+        data = self.request("GET", f"{self._webhooks_root()}/event-types/")
+        return WebhookEventTypeList.model_validate(data)
+
     def close(self) -> None:
         """Close the HTTP transport and release resources."""
         self._transport.close()
@@ -5657,6 +5990,285 @@ class AsyncManagementClient(_ManagementPathsMixin):
             query["collection"] = _resolve_key(collection)
         data = await self.request("GET", f"{self._files_review_root()}/", params=query)
         return FileReviewQueue.model_validate(data)
+
+    # ------------------------------------------------------------------ #
+    # Webhooks
+    # ------------------------------------------------------------------ #
+
+    async def list_webhook_endpoints(
+        self, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookEndpointList:
+        """List the environment's webhook endpoints, newest first.
+
+        Each item carries ``stats_24h``. Secrets are never included.
+
+        Args:
+            params: Optional ``status`` (``active``, ``paused`` or ``disabled``),
+                ``limit`` (at most 200) and ``offset``.
+        """
+        data = await self.request(
+            "GET", f"{self._webhooks_root()}/endpoints/", params=params
+        )
+        return WebhookEndpointList.model_validate(data)
+
+    async def create_webhook_endpoint(
+        self,
+        *,
+        url: str,
+        event_types: Sequence[str],
+        description: str | None = None,
+        collection_keys: Sequence[CollectionRef] | None = None,
+        payload_mode: str | None = None,
+        version: int | None = None,
+    ) -> WebhookEndpointCreated:
+        """Create a webhook endpoint.
+
+        The answer carries the signing ``secret``; read it again later with
+        `get_webhook_endpoint_secret`. An environment holds at most 20
+        endpoints (``WebhookEndpointLimitExceeded``). A ``content`` endpoint also
+        needs read access to the content it will deliver.
+
+        Args:
+            url: The ``https`` URL deliveries are sent to.
+            event_types: Event types to receive, at least one. See
+                `list_webhook_event_types`.
+            description: Free text, at most 255 characters.
+            collection_keys: Collections to receive events from, at most 50. Empty
+                or omitted for every collection.
+            payload_mode: ``references`` (the default) or ``content``.
+            version: Payload version; ``1`` is the only one.
+        """
+        body = _webhook_endpoint_body(
+            url=url,
+            event_types=event_types,
+            description=description,
+            collection_keys=collection_keys,
+            payload_mode=payload_mode,
+            version=version,
+        )
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._webhooks_root()}/endpoints/",
+            json_body=body,
+            allow_retries=False,
+        )
+        return WebhookEndpointCreated.model_validate(data)
+
+    async def get_webhook_endpoint(self, endpoint_id: str) -> WebhookEndpoint:
+        """Read one webhook endpoint. It carries neither the secret nor ``stats_24h``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        data = await self.request("GET", f"{self._webhook_endpoint_root(endpoint_id)}/")
+        return WebhookEndpoint.model_validate(data)
+
+    async def update_webhook_endpoint(
+        self,
+        endpoint_id: str,
+        *,
+        url: str | None = None,
+        event_types: Sequence[str] | None = None,
+        description: str | None = None,
+        collection_keys: Sequence[CollectionRef] | None = None,
+        payload_mode: str | None = None,
+        version: int | None = None,
+        status: str | None = None,
+    ) -> WebhookEndpoint:
+        """Change the given fields of an endpoint and leave the rest alone.
+
+        ``status`` accepts ``active`` or ``paused``. Setting ``active`` on a paused
+        or disabled endpoint resumes it and clears its failure streak; events that
+        happened meanwhile are not sent, but failed deliveries can be sent again
+        with `recover_webhook_deliveries`.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        body = _webhook_endpoint_body(
+            url=url,
+            event_types=event_types,
+            description=description,
+            collection_keys=collection_keys,
+            payload_mode=payload_mode,
+            version=version,
+            status=status,
+        )
+        data = await self.request(
+            "PATCH", f"{self._webhook_endpoint_root(endpoint_id)}/", json_body=body
+        )
+        return WebhookEndpoint.model_validate(data)
+
+    async def delete_webhook_endpoint(self, endpoint_id: str) -> None:
+        """Delete an endpoint and its pending deliveries.
+
+        Its finished deliveries and attempts stay in the event log for 30 days,
+        with ``endpoint.deleted`` true.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        await self.request(
+            "DELETE", f"{self._webhook_endpoint_root(endpoint_id)}/", parse_json=False
+        )
+
+    async def list_webhook_endpoint_deliveries(
+        self, endpoint_id: str, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookEndpointDeliveryList:
+        """List an endpoint's deliveries, newest first, each with the event it carries.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            params: Optional ``limit`` (at most 200) and ``offset``.
+        """
+        data = await self.request(
+            "GET",
+            f"{self._webhook_endpoint_root(endpoint_id)}/deliveries/",
+            params=params,
+        )
+        return WebhookEndpointDeliveryList.model_validate(data)
+
+    async def get_webhook_endpoint_secret(self, endpoint_id: str) -> WebhookSecret:
+        """Read the endpoint's current signing secret: the newest, during a rotation.
+
+        Needs ``webhooks:update``. The secret is left out of ``repr()``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+        """
+        data = await self.request(
+            "GET", f"{self._webhook_endpoint_root(endpoint_id)}/secret/"
+        )
+        return WebhookSecret.model_validate(data)
+
+    async def rotate_webhook_endpoint_secret(
+        self, endpoint_id: str, *, expire_previous_now: bool = False
+    ) -> WebhookSecretRotation:
+        """Create a new signing secret and return it.
+
+        The previous secret stays valid for 24 hours, and deliveries carry a
+        signature for each valid secret; with ``expire_previous_now`` it stops at
+        once. Needs ``webhooks:update``. The secret is left out of ``repr()``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            expire_previous_now: Stop signing with the previous secret immediately.
+        """
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._webhook_endpoint_root(endpoint_id)}/secret/rotate/",
+            json_body={"expire_previous_now": expire_previous_now},
+            allow_retries=False,
+        )
+        return WebhookSecretRotation.model_validate(data)
+
+    async def send_webhook_test_event(
+        self, endpoint_id: str, event_type: str
+    ) -> WebhookTestEvent:
+        """Send a sample event to this endpoint only, with ``test`` true in the envelope.
+
+        It is sent whatever the endpoint's event types and collection filter, but
+        the endpoint must be active (``WebhookEndpointNotActive``).
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            event_type: Any type of the catalogue.
+        """
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._webhook_endpoint_root(endpoint_id)}/test/",
+            json_body={"event_type": event_type},
+            allow_retries=False,
+        )
+        return WebhookTestEvent.model_validate(data)
+
+    async def recover_webhook_deliveries(
+        self, endpoint_id: str, *, since: datetime | str
+    ) -> WebhookRecovery:
+        """Send again the endpoint's failed deliveries created at or after ``since``.
+
+        Each becomes a new pending delivery of the same event. One call queues at
+        most 10,000 deliveries; when ``more`` is true, call again with the same
+        ``since``.
+
+        Args:
+            endpoint_id: The endpoint's ``id``.
+            since: ISO 8601 time within the last 30 days; a time without a zone is
+                read as UTC.
+        """
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._webhook_endpoint_root(endpoint_id)}/recover/",
+            json_body={"since": _iso_datetime(since)},
+            allow_retries=False,
+        )
+        return WebhookRecovery.model_validate(data)
+
+    async def list_webhook_events(
+        self, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookEventList:
+        """List the events of the last 30 days, newest first, with ``delivery_counts``.
+
+        Args:
+            params: Optional ``type``, ``endpoint`` (an endpoint ``id``), ``status``
+                (``pending``, ``succeeded`` or ``dead``), ``test`` (``true`` or
+                ``false``), ``after``, ``before`` (ISO 8601), ``limit`` (at most
+                200) and ``offset``.
+        """
+        data = await self.request(
+            "GET", f"{self._webhooks_root()}/events/", params=params
+        )
+        return WebhookEventList.model_validate(data)
+
+    async def get_webhook_event(self, event_id: str) -> WebhookEventDetail:
+        """Read one event with its envelope and all its deliveries, oldest first.
+
+        Args:
+            event_id: The event's ``id``, for example ``evt_01JCX3Q9W2B5V7RZ0D4K6M8P1T``.
+        """
+        data = await self.request("GET", f"{self._webhook_event_root(event_id)}/")
+        return WebhookEventDetail.model_validate(data)
+
+    async def list_webhook_event_attempts(
+        self, event_id: str, *, params: Mapping[str, Any] | None = None
+    ) -> WebhookAttemptList:
+        """List every attempt to deliver the event, across endpoints, oldest first.
+
+        Args:
+            event_id: The event's ``id``.
+            params: Optional ``limit`` (at most 200) and ``offset``.
+        """
+        data = await self.request(
+            "GET", f"{self._webhook_event_root(event_id)}/attempts/", params=params
+        )
+        return WebhookAttemptList.model_validate(data)
+
+    async def redeliver_webhook_event(
+        self, event_id: str, *, endpoint_id: str | None = None
+    ) -> WebhookRedeliveryResult:
+        """Send the event again as a new delivery, with the same event ``id``.
+
+        With ``endpoint_id`` the event goes to that endpoint. Without it, the event
+        goes to every endpoint that had a delivery of it and is active and
+        subscribed to it now; the others are listed in ``skipped``.
+
+        Args:
+            event_id: The event's ``id``.
+            endpoint_id: Redeliver to this endpoint only.
+        """
+        body = {"endpoint_id": endpoint_id} if endpoint_id is not None else {}
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._webhook_event_root(event_id)}/redeliver/",
+            json_body=body,
+            allow_retries=False,
+        )
+        return WebhookRedeliveryResult.model_validate(data)
+
+    async def list_webhook_event_types(self) -> WebhookEventTypeList:
+        """List the event-type catalogue with the JSON Schema of each payload mode."""
+        data = await self.request("GET", f"{self._webhooks_root()}/event-types/")
+        return WebhookEventTypeList.model_validate(data)
 
     async def aclose(self) -> None:
         await self._transport.aclose()

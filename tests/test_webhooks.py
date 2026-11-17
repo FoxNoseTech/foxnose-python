@@ -25,7 +25,7 @@ from foxnose_sdk import (
 )
 from foxnose_sdk.auth import SimpleKeyAuth
 from foxnose_sdk.config import FoxnoseConfig, RetryConfig
-from foxnose_sdk.errors import FoxnoseAPIError, FoxnoseTransportError
+from foxnose_sdk.errors import FoxnoseAPIError, FoxnoseTransportError, build_api_error
 from foxnose_sdk.http import HttpTransport
 from foxnose_sdk.management.client import AsyncManagementClient, ManagementClient
 from foxnose_sdk.management.models import (
@@ -741,3 +741,59 @@ def test_sync_and_async_clients_have_the_same_webhook_methods():
 
     assert names(ManagementClient) == names(AsyncManagementClient)
     assert len(names(ManagementClient)) == 15
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "cls", "default_message"),
+    [
+        (
+            404,
+            "webhook_endpoint_not_found",
+            WebhookEndpointNotFound,
+            "Webhook endpoint not found",
+        ),
+        (
+            404,
+            "webhook_event_not_found",
+            WebhookEventNotFound,
+            "Webhook event not found",
+        ),
+        (
+            409,
+            "limit_exceeded",
+            WebhookEndpointLimitExceeded,
+            "Webhook endpoint limit reached",
+        ),
+        (
+            409,
+            "endpoint_not_active",
+            WebhookEndpointNotActive,
+            "The webhook endpoint is not active",
+        ),
+    ],
+)
+def test_webhook_errors_get_a_default_message(status, code, cls, default_message):
+    error = build_api_error(
+        message="",
+        status_code=status,
+        error_code=code,
+        detail=None,
+        response_headers=None,
+        response_body=None,
+    )
+    assert isinstance(error, cls)
+    assert default_message in str(error)
+
+
+def test_not_subscribed_error_gets_a_default_message_and_no_skipped():
+    error = build_api_error(
+        message="",
+        status_code=409,
+        error_code="endpoint_not_subscribed",
+        detail=None,
+        response_headers=None,
+        response_body=None,
+    )
+    assert isinstance(error, WebhookEndpointNotSubscribed)
+    assert error.skipped == []
+    assert str(error)

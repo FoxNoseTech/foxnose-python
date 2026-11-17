@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
@@ -17,8 +18,59 @@ class PaginatedResponse(BaseModel, Generic[T]):
     results: list[T]
 
 
+class _FilesModel(BaseModel):
+    """Base of the Files response models: a field the server adds is kept."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class UploadFileProgress(_FilesModel):
+    """Where a file stands in the processing steps."""
+
+    step: int
+    of: int
+    step_name: str | None = None
+
+
+class FileSummary(_FilesModel):
+    """The file attached to a record or a revision."""
+
+    uuid: str | None = None
+    mime: str | None = None
+    width: int | None = None
+    height: int | None = None
+    cdn_url_base: str | None = None
+    filename: str | None = None
+    size: int | None = None
+    page_count: int | None = None
+
+
+class FileRecordOwner(_FilesModel):
+    """The parent record of a file record. ``title`` is ``None`` when the caller may
+    not read the owner, and ``deleted`` is true for a parent that was deleted."""
+
+    key: str
+    title: str | None = None
+    deleted: bool = False
+
+
+class FileInfo(_FilesModel):
+    """A file record's newest file, published or not."""
+
+    filename: str | None = None
+    mime: str | None = None
+    size: int | None = None
+    page_count: int | None = None
+
+
 class ResourceSummary(BaseModel):
-    """Metadata describing a Management API resource entry."""
+    """Metadata describing a Management API resource entry.
+
+    ``owner``, ``status``, ``progress``, ``analysis_state``, ``thumbnail_url``,
+    ``file_info``, ``verdict`` and ``verdict_reasons`` are set on a record of a files
+    collection only. ``thumbnail_url`` is short-lived and left out of ``repr()``.
+    ``guardrails`` is the record's trust summary where the API computes one.
+    """
 
     key: str
     folder: str
@@ -26,17 +78,35 @@ class ResourceSummary(BaseModel):
     created_at: datetime
     vectors_size: int
     name: str | None = None
+    name_is_auto: bool = False
     resource_owner: str | None = None
     current_revision: str | None = None
     external_id: str | None = None
+    file: FileSummary | None = None
+    owner: FileRecordOwner | None = None
+    status: str | None = None
+    progress: UploadFileProgress | None = None
+    analysis_state: str | None = None
+    thumbnail_url: str | None = Field(default=None, repr=False)
+    file_info: FileInfo | None = None
+    verdict: str | None = None
+    verdict_reasons: list[Any] = []
+    guardrails: dict[str, Any] | None = None
 
 
 class RevisionSummary(BaseModel):
-    """Metadata describing a revision associated with a resource."""
+    """Metadata describing a revision associated with a resource.
+
+    ``schema_version`` is ``None`` when the schema version is gone.
+    ``schema_version_number`` is ``None`` then too, and for a draft version.
+    """
 
     key: str
     resource: str
-    schema_version: str
+    schema_version: str | None
+    schema_version_number: int | None = None
+    file: FileSummary | None = None
+    guardrails: dict[str, Any] | None = None
     number: int
     size: int
     created_at: datetime
@@ -525,6 +595,8 @@ class OrganizationSummary(BaseModel):
     block_dt: datetime | None = None
     block_reason: str | None = None
     is_blocked: bool
+    is_verified: bool = False
+    verification_method: str | None = None
 
 
 OrganizationList = list[OrganizationSummary]
@@ -671,6 +743,505 @@ class BatchUpsertResult(BaseModel):
         return len(self.failed) > 0
 
 
+# --------------------------------------------------------------------------- #
+# Files
+# --------------------------------------------------------------------------- #
+
+
+class UploadLinkCreator(_FilesModel):
+    """Who created an upload link."""
+
+    kind: str  # "user" or "api_key"
+    label: str | None = None
+    user: str | None = None
+    key: str | None = None
+
+
+class UploadLinkFile(_FilesModel):
+    """One file uploaded through a link, as the link's owner sees it."""
+
+    state: str  # processing, ready, pending_review or rejected
+    record_key: str | None = None
+    public_reason: str | None = None
+    file_name: str | None = None
+    progress: UploadFileProgress | None = None
+
+
+class UploadLinkSession(_FilesModel):
+    """One visit to a link's hosted page and the files it uploaded."""
+
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+    files: list[UploadLinkFile] = []
+
+
+class UploadLink(_FilesModel):
+    """An upload link with its sessions and the status of each file."""
+
+    upload_id: str
+    created_by: UploadLinkCreator | None = None
+    owner_key: str | None = None
+    title: str | None = None
+    instructions: str | None = None
+    max_files: int
+    allowed_kinds: list[str] = []
+    consumed_count: int = 0
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    state: str  # active, consumed, expired or revoked
+    sessions: list[UploadLinkSession] = []
+
+
+UploadLinkList = PaginatedResponse[UploadLink]
+
+
+class UploadLinkCreated(_FilesModel):
+    """The answer to creating an upload link.
+
+    ``upload_url`` carries the link's token and is returned only here: no later
+    read reproduces it. It is left out of ``repr()``, and a response that fails
+    to parse does not quote it.
+    """
+
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+
+    upload_id: str
+    title: str | None = None
+    instructions: str | None = None
+    upload_url: str = Field(repr=False)
+    expires_at: datetime
+    max_files: int
+    allowed_kinds: list[str] = []
+
+
+class FileAnalysis(_FilesModel):
+    """The active analysis of a file."""
+
+    generation: int
+    state: str
+    verdict: str | None = None
+    verdict_reasons: list[Any] = []
+    public_reason: str | None = None
+    error_code: str | None = None
+    in_review: bool = False
+    publish_requested_by: str | None = None
+    policy_version: int | None = None
+    pipeline_version: str | None = None
+    source_format: str | None = None
+    scanned_at: datetime | None = None
+    step_times: dict[str, Any] = {}
+    state_changed_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class FileCheck(_FilesModel):
+    """The receipt of one check that ran on a file."""
+
+    detector: str
+    detector_version: str | None = None
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class FileEvidencePart(_FilesModel):
+    """The text of one zone of a finding."""
+
+    box: Any | None = None
+    text: str | None = Field(default=None, repr=False)
+
+
+class FileTextEvidence(_FilesModel):
+    """The concealed or withheld text a finding holds, as it was in the file.
+
+    ``parts`` says which text lies in which box of the page. It is empty for a finding
+    that does not carry it, so fall back to ``text``. The text is left out of
+    ``repr()``.
+    """
+
+    page: int | None = None
+    box: Any | None = None
+    tokens: int | None = None
+    text: str | None = Field(default=None, repr=False)
+    samples: list[str] = Field(default=[], repr=False)
+    reason: str | None = None
+    parts: list[FileEvidencePart] = Field(default=[], repr=False)
+    truncated: bool = False
+    list_truncated: bool = False
+    omitted: int | None = None
+
+
+#: The finding kinds whose ``evidence`` holds text of the file.
+_TEXT_EVIDENCE_KINDS = frozenset({"hidden_text", "low_legibility_text"})
+
+
+class FileFinding(_FilesModel):
+    """One finding of an analysis.
+
+    ``evidence`` is the stored string, ``None`` once a blocked or rejected file's
+    personal data is redacted. It can quote text from the file, so it is left out of
+    ``repr()``. :attr:`text_evidence` reads it for a finding that holds text.
+    """
+
+    kind: str
+    sub_kind: str | None = None
+    severity: str
+    page: int | None = None
+    box: Any | None = None
+    detector: str | None = None
+    detector_version: str | None = None
+    score: float | None = None
+    evidence: str | None = Field(default=None, repr=False)
+    detail: dict[str, Any] | None = None
+    rule_id: str | None = None
+
+    @property
+    def text_evidence(self) -> FileTextEvidence | None:
+        """The parsed text of a ``hidden_text`` or ``low_legibility_text`` finding.
+
+        ``None`` for every other kind and for evidence in another form. The text
+        comes from the file: treat it as untrusted content, never as instructions.
+        """
+        if self.kind not in _TEXT_EVIDENCE_KINDS or not self.evidence:
+            return None
+        try:
+            return FileTextEvidence.model_validate(json.loads(self.evidence))
+        except ValueError:
+            return None
+
+
+class FileCopyAvailability(_FilesModel):
+    """Whether one copy of a file can be downloaded now, and why not if it cannot."""
+
+    available: bool
+    reason: str | None = None
+
+
+class FileActiveContent(_FilesModel):
+    """Active content found in a file. ``present`` is ``None`` when it is unknown."""
+
+    present: bool | None = None
+    kinds: dict[str, int] = {}
+    truncated: bool = False
+
+
+class FileOriginActor(_FilesModel):
+    """Who started an upload. ``kind`` is ``user``, ``management_key`` or
+    ``flux_key``; ``name`` is ``None`` when it cannot be found."""
+
+    kind: str
+    name: str | None = None
+
+
+class FileOriginLink(_FilesModel):
+    """The upload link a file came through."""
+
+    upload_id: str
+    title: str | None = None
+
+
+class FileOrigin(_FilesModel):
+    """Where a record's file came from.
+
+    ``channel`` is ``upload_link``, ``signed_upload``, ``management_api``,
+    ``dashboard`` or ``None``. ``external`` is true for a file that came from outside
+    the team. ``end_user`` is the identifier given when an end user's upload was
+    signed; it is left out of ``repr()``.
+    """
+
+    channel: str | None = None
+    external: bool = True
+    created_by: FileOriginActor | None = None
+    upload_link: FileOriginLink | None = None
+    end_user: str | None = Field(default=None, repr=False)
+
+
+class FileDownloadOptions(_FilesModel):
+    """What the caller may download of a record's file, and where it came from.
+
+    ``origin`` is set on ``get_file_analysis`` for a file bound to the record, and
+    ``None`` for a record uploaded without an intent.
+    """
+
+    original: FileCopyAvailability
+    safe_copy: FileCopyAvailability
+    active_content: FileActiveContent = FileActiveContent()
+    original_access: str | None = None
+    origin: FileOrigin | None = None
+
+
+class FileTrust(_FilesModel):
+    """How agent surfaces mark the file's content."""
+
+    processing: str | None = None
+    content_tainted: bool = False
+    tainted_paths: list[str] = []
+
+
+class FileRecordView(_FilesModel):
+    """A record's file, its active analysis, check receipts and findings.
+
+    ``outcome`` and ``reason`` are set on the answer to an approval only.
+    """
+
+    resource_key: str
+    file_uuid: str | None = None
+    page_count: int | None = None
+    asset_state: str | None = None
+    tombstone: bool = False
+    trust: FileTrust | None = None
+    analysis: FileAnalysis | None = None
+    checks: list[FileCheck] = []
+    findings: list[FileFinding] = []
+    file: FileDownloadOptions | None = None
+    outcome: str | None = None
+    reason: str | None = None
+
+
+class FileDownload(_FilesModel):
+    """A short-lived link to one copy of a file.
+
+    ``url`` works for whoever holds it until it expires, so it is left out of
+    ``repr()``, and a response that fails to parse does not quote it.
+    """
+
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+
+    url: str = Field(repr=False)
+    expires_in: int | None = None
+    expires_at: datetime | None = None
+    kind: str  # original, safe_copy or page
+    filename: str | None = None
+    content_type: str | None = None
+    generation: int | None = None
+    state: str | None = None
+    active_content: FileActiveContent | None = None
+    warnings: list[dict[str, Any]] = []
+
+
+class FilePageRedaction(_FilesModel):
+    """A region withheld from a page image."""
+
+    reason: str
+    box: list[float]
+    label: str | None = None
+
+
+class FilePageTable(_FilesModel):
+    """A table found on a page."""
+
+    box: Any
+
+
+class FilePagePii(_FilesModel):
+    """Where personal data stands on a page. ``unreliable`` marks data found only in
+    text read with low confidence. The matched text is never included."""
+
+    type: str
+    label: str | None = None
+    box: list[float]
+    unreliable: bool = False
+
+
+class FileFindingGroup(_FilesModel):
+    """The findings of a file that share a kind, severity and source."""
+
+    code: str
+    sub_kind: str | None = None
+    severity: str
+    source: str | None = None
+    pages: list[int] = []
+    removed_from_agents: bool = False
+    label: str | None = None
+    rule_id: str | None = None
+
+
+class FilePageFinding(_FilesModel):
+    """A finding of one page. ``box`` is ``None`` when it has no place on the page."""
+
+    code: str
+    sub_kind: str | None = None
+    severity: str
+    source: str | None = None
+    box: list[float] | None = None
+    removed_from_agents: bool = False
+    label: str | None = None
+    rule_id: str | None = None
+
+
+class FilePageDetail(_FilesModel):
+    """One page of a file: its redacted image, what was withheld, its tables and the
+    text an agent receives.
+
+    ``image_url`` is short-lived and ``text`` is the file's own text: both are left
+    out of ``repr()``. ``redactions``,
+    ``tables``, ``text``, ``content_flags``, ``pii`` and ``pii_truncated`` are ``None``
+    for a page without extracted text. With ``pii_truncated`` true, an empty ``pii``
+    means locations were discarded, not that none were found.
+
+    ``findings`` covers the whole file and ``page_findings`` this page. Neither carries
+    evidence. ``removed_passages`` counts the file's findings whose text is withheld
+    from agents.
+    """
+
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+
+    page: int
+    of: int | None = None
+    image_url: str = Field(repr=False)
+    image_width: int | None = None
+    image_height: int | None = None
+    expires_in: int | None = None
+    redactions: list[FilePageRedaction] | None = None
+    tables: list[FilePageTable] | None = None
+    text: str | None = Field(default=None, repr=False)
+    content_flags: list[dict[str, Any]] | None = None
+    pii: list[FilePagePii] | None = None
+    pii_truncated: bool | None = None
+    findings: list[FileFindingGroup] = []
+    page_findings: list[FilePageFinding] = []
+    removed_passages: int = 0
+    trust: FileTrust | None = None
+    verdict: str | None = None
+    reasons: list[Any] = []
+    generation: int | None = None
+    state: str | None = None
+
+
+class FileTombstone(_FilesModel):
+    """A blocked or rejected file.
+
+    ``original_filename``, ``raw_payload``, ``uploaded_by``, ``owner_key`` and each
+    finding's ``evidence`` are ``None`` once ``redacted`` is true. The first three,
+    the personal data, are left out of ``repr()``.
+    """
+
+    resource_key: str | None = None
+    file_uuid: str | None = None
+    reason: str
+    public_reason: str | None = None
+    error_code: str | None = None
+    verdict_reasons: list[Any] = []
+    generation: int | None = None
+    asset_state: str | None = None
+    blocked_at: datetime | None = None
+    purge_completed_at: datetime | None = None
+    redacts_at: datetime | None = None
+    redacted: bool = False
+    original_filename: str | None = Field(default=None, repr=False)
+    raw_payload: Any | None = Field(default=None, repr=False)
+    uploaded_by: str | None = Field(default=None, repr=False)
+    owner_key: str | None = None
+    findings: list[FileFinding] = []
+
+
+FileTombstoneList = PaginatedResponse[FileTombstone]
+
+
+class FileFindingsSummary(_FilesModel):
+    """Counts of a file's findings."""
+
+    total: int = 0
+    by_kind: dict[str, int] = {}
+    by_severity: dict[str, int] = {}
+
+
+class FileReviewItem(_FilesModel):
+    """A file held for a reviewer.
+
+    ``owner`` is ``None`` outside a strict collection. ``thumbnail_url`` is short-lived
+    and left out of ``repr()``; it is ``None`` for a caller who is not the record's
+    reviewer, for a file held by moderation and over the project's view budget.
+    """
+
+    resource_key: str
+    file_uuid: str | None = None
+    collection: str
+    file_name: str | None = None
+    generation: int | None = None
+    state: str | None = None
+    verdict: str | None = None
+    verdict_reasons: list[Any] = []
+    public_reason: str | None = None
+    findings: FileFindingsSummary = FileFindingsSummary()
+    owner: dict[str, Any] | None = None
+    held_at: datetime | None = None
+    thumbnail_url: str | None = Field(default=None, repr=False)
+
+
+FileReviewQueue = PaginatedResponse[FileReviewItem]
+
+
+class FilesPolicyBody(_FilesModel):
+    """The settings of a collection's files policy.
+
+    As a request body it is a full replacement: a field left out takes its default.
+    """
+
+    suspicious_action: str | None = None  # deliver or quarantine
+    overrides: dict[str, str] | None = None
+    allowed_kinds: list[str] | None = None
+    tables: str | None = None  # auto, never or always
+    moderation_rules: list[dict[str, Any]] | None = None
+    acknowledge_explicit_delivery: bool | None = None
+    original_access: str | None = None  # allowed, when_clean or disabled
+
+
+class FilesPolicy(_FilesModel):
+    """A collection's live files policy.
+
+    ``version`` is ``None`` while the collection runs on the default policy.
+    """
+
+    version: int | None = None
+    enforce_from: datetime | None = None
+    body: FilesPolicyBody
+    config_hash: str | None = None
+    created_at: datetime | None = None
+
+
+class EnvironmentAccess(BaseModel):
+    """The state of the environment, for combining with what a caller may do."""
+
+    model_config = ConfigDict(extra="allow")
+
+    protection_level: str | None = None
+    is_enabled: bool = True
+
+
+class ContentTypeAccess(BaseModel):
+    """What a caller may do with one content type.
+
+    ``objects`` lists the keys the caller is restricted to; ``None`` means every
+    object.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    actions: list[str] = []
+    objects: list[str] | None = None
+
+
+class MyPermissions(BaseModel):
+    """What the authenticated caller may do in the environment.
+
+    This says what the caller is allowed, not whether an action is available now:
+    billing and usage blocks, a blocked organization, environment protection and a
+    disabled environment can still refuse it.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    subject: str  # "user" or "api_key"
+    organization_owner: bool = False
+    organization_admin: bool = False
+    project_admin: bool = False
+    environment_full_access: bool = False
+    environment: EnvironmentAccess
+    content_types: dict[str, ContentTypeAccess] = {}
+
+
 __all__ = [
     "PaginatedResponse",
     "ResourceSummary",
@@ -715,4 +1286,44 @@ __all__ = [
     "BatchUpsertResult",
     "FlatRoute",
     "FlatRouteSummary",
+    "UploadLinkCreator",
+    "UploadFileProgress",
+    "UploadLinkFile",
+    "UploadLinkSession",
+    "UploadLink",
+    "UploadLinkList",
+    "UploadLinkCreated",
+    "FileAnalysis",
+    "FileCheck",
+    "FileFinding",
+    "FileCopyAvailability",
+    "FileActiveContent",
+    "FileDownloadOptions",
+    "FileRecordView",
+    "FileDownload",
+    "FilePageRedaction",
+    "FilePageTable",
+    "FilePageDetail",
+    "FileTombstone",
+    "FileTombstoneList",
+    "FileFindingsSummary",
+    "FileReviewItem",
+    "FileReviewQueue",
+    "FilesPolicyBody",
+    "FilesPolicy",
+    "FileOrigin",
+    "FileOriginActor",
+    "FileOriginLink",
+    "FileSummary",
+    "FileRecordOwner",
+    "FileInfo",
+    "FileEvidencePart",
+    "FileTextEvidence",
+    "FileTrust",
+    "FilePagePii",
+    "FileFindingGroup",
+    "FilePageFinding",
+    "EnvironmentAccess",
+    "ContentTypeAccess",
+    "MyPermissions",
 ]

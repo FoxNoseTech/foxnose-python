@@ -58,6 +58,52 @@ class PlanExhausted(FoxnoseAPIError):
         self.upgrade_url = upgrade_url
 
 
+class FilesQuotaExceeded(FoxnoseAPIError):
+    """Raised on HTTP 402 ``files_quota_exceeded`` — no file processing units are left.
+
+    ``reason`` says what ran out, and the matching link is ``upgrade_url`` or
+    ``raise_cap_url``. A refusal relayed by Flux carries the code only, so these
+    attributes are ``None`` there.
+    """
+
+    def __init__(
+        self,
+        *,
+        axis: str | None = None,
+        reason: str | None = None,
+        used_units: int | float | None = None,
+        included_units: int | float | None = None,
+        cap_usd: float | None = None,
+        window_resets_at: str | None = None,
+        upgrade_url: str | None = None,
+        raise_cap_url: str | None = None,
+        **base_kwargs: Any,
+    ) -> None:
+        super().__init__(**base_kwargs)
+        self.axis = axis
+        self.reason = reason
+        self.used_units = used_units
+        self.included_units = included_units
+        self.cap_usd = cap_usd
+        self.window_resets_at = window_resets_at
+        self.upgrade_url = upgrade_url
+        self.raise_cap_url = raise_cap_url
+
+
+class FilesQuotaUnavailable(FoxnoseAPIError):
+    """Raised on HTTP 503 ``files_quota_unavailable`` — the file processing quota
+    could not be read, so nothing was started. Retry after ``retry_after`` seconds."""
+
+    def __init__(
+        self,
+        *,
+        retry_after: float | None = None,
+        **base_kwargs: Any,
+    ) -> None:
+        super().__init__(**base_kwargs)
+        self.retry_after = retry_after
+
+
 class PlanLimitExceeded(FoxnoseAPIError):
     """Raised on HTTP 403 ``plan_limit_exceeded`` — a plan entity ceiling was hit."""
 
@@ -176,6 +222,17 @@ def _header_lookup(headers: Mapping[str, str] | None, name: str) -> str | None:
     return None
 
 
+def _retry_after(headers: Mapping[str, str] | None) -> float | None:
+    """``Retry-After`` in seconds, or ``None`` when absent or not a number."""
+    raw = _header_lookup(headers, "Retry-After")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 def build_api_error(
     *,
     message: str,
@@ -221,6 +278,28 @@ def build_api_error(
             **base_kwargs,
         )
 
+    if status_code == 402 and error_code == "files_quota_exceeded" and body is not None:
+        if "message" not in body:
+            base_kwargs["message"] = "File processing quota reached"
+        return FilesQuotaExceeded(
+            axis=body.get("axis"),
+            reason=body.get("reason"),
+            used_units=body.get("used_units"),
+            included_units=body.get("included_units"),
+            cap_usd=body.get("cap_usd"),
+            window_resets_at=body.get("window_resets_at"),
+            upgrade_url=body.get("upgrade_url"),
+            raise_cap_url=body.get("raise_cap_url"),
+            **base_kwargs,
+        )
+
+    if status_code == 503 and error_code == "files_quota_unavailable":
+        if body is None or "message" not in body:
+            base_kwargs["message"] = "File processing quota is unavailable"
+        return FilesQuotaUnavailable(
+            retry_after=_retry_after(response_headers), **base_kwargs
+        )
+
     if status_code == 403 and error_code == "plan_limit_exceeded":
         detail_obj = detail if isinstance(detail, dict) else {}
         return PlanLimitExceeded(
@@ -232,14 +311,9 @@ def build_api_error(
         )
 
     if status_code == 429 and error_code == "rate_limited":
-        retry_after: float | None = None
-        raw_retry_after = _header_lookup(response_headers, "Retry-After")
-        if raw_retry_after is not None:
-            try:
-                retry_after = float(raw_retry_after)
-            except ValueError:
-                retry_after = None
-        return RateLimitExceeded(retry_after=retry_after, **base_kwargs)
+        return RateLimitExceeded(
+            retry_after=_retry_after(response_headers), **base_kwargs
+        )
 
     if status_code == 403 and error_code == "collection_not_writable":
         if not message:

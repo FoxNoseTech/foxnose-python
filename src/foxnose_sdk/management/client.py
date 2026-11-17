@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 from collections.abc import Callable, Sequence
 from typing import Any, Mapping, Union
+from urllib.parse import quote
 
 from pydantic import BaseModel
 
@@ -27,6 +28,13 @@ from .models import (
     EnvironmentSummary,
     FieldList,
     FieldSummary,
+    FileDownload,
+    FilePageDetail,
+    FileRecordView,
+    FileReviewQueue,
+    FilesPolicy,
+    FilesPolicyBody,
+    FileTombstoneList,
     FluxAPIKeyList,
     FluxAPIKeyBearerToken,
     FluxAPIKeySummary,
@@ -42,6 +50,7 @@ from .models import (
     ManagementAPIKeySummary,
     ManagementRoleList,
     ManagementRoleSummary,
+    MyPermissions,
     OrganizationList,
     OrganizationPlanStatus,
     OrganizationSummary,
@@ -58,6 +67,9 @@ from .models import (
     SchemaVersionList,
     SchemaVersionSummary,
     SyncComponentResponse,
+    UploadLink,
+    UploadLinkCreated,
+    UploadLinkList,
 )
 
 
@@ -75,6 +87,35 @@ def _resolve_key(value: str | BaseModel) -> str:
     if not isinstance(key, str):
         raise TypeError(f"Expected 'key' to be a string, got {type(key).__name__}")
     return key
+
+
+def _upload_link_body(
+    *,
+    owner: ResourceRef,
+    title: str,
+    instructions: str | None,
+    max_files: int | None,
+    allowed_kinds: Sequence[str] | None,
+    expires_in: int | None,
+) -> dict[str, Any]:
+    """Build the body of an upload-link create, leaving out what was not given."""
+    body: dict[str, Any] = {"owner": _resolve_key(owner), "title": title}
+    if instructions is not None:
+        body["instructions"] = instructions
+    if max_files is not None:
+        body["max_files"] = max_files
+    if allowed_kinds is not None:
+        body["allowed_kinds"] = list(allowed_kinds)
+    if expires_in is not None:
+        body["expires_in"] = expires_in
+    return body
+
+
+def _files_policy_body(payload: FilesPolicyBody | Mapping[str, Any]) -> Any:
+    """A policy PUT replaces the policy: what is unset here is left to its default."""
+    if isinstance(payload, FilesPolicyBody):
+        return payload.model_dump(exclude_none=True)
+    return payload
 
 
 def _coerce_list_payload(payload: Any) -> list[Any]:
@@ -224,6 +265,29 @@ class _ManagementPathsMixin:
 
     def _revision_base(self, folder_key: str, resource_key: str) -> str:
         return f"{self._resource_base(folder_key)}/{resource_key}/revisions"
+
+    # Files paths
+    def _upload_links_root(self, collection_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/upload-links"
+
+    def _upload_link_root(self, collection_key: str, upload_id: str) -> str:
+        link = quote(upload_id, safe="")
+        return f"{self._upload_links_root(collection_key)}/{link}"
+
+    def _file_root(self, collection_key: str, resource_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/files/{resource_key}"
+
+    def _file_tombstones_root(self, collection_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/files/tombstones"
+
+    def _files_policy_root(self, collection_key: str) -> str:
+        return f"{self._collection_root(collection_key)}/files-policy"
+
+    def _files_review_root(self) -> str:
+        return f"/v1/{self.environment_key}/files/review"
+
+    def _my_permissions_root(self) -> str:
+        return f"/v1/{self.environment_key}/permissions/me"
 
     # Management API key paths
     def _management_api_keys_root(self) -> str:
@@ -382,6 +446,22 @@ class ManagementClient(_ManagementPathsMixin):
         """
         org_key = _resolve_key(org_key)
         data = self.request("PUT", f"{self._org_root(org_key)}/", json_body=payload)
+        return OrganizationSummary.model_validate(data)
+
+    def patch_organization(
+        self, org_key: OrgRef, payload: Mapping[str, Any]
+    ) -> OrganizationSummary:
+        """Write the given fields of an organization and leave the rest alone.
+
+        Args:
+            org_key: Unique identifier of the organization.
+            payload: Only the fields to change.
+
+        Returns:
+            The whole organization as stored.
+        """
+        org_key = _resolve_key(org_key)
+        data = self.request("PATCH", f"{self._org_root(org_key)}/", json_body=payload)
         return OrganizationSummary.model_validate(data)
 
     def list_regions(self) -> list[RegionInfo]:
@@ -908,6 +988,16 @@ class ManagementClient(_ManagementPathsMixin):
     # Management role operations
     # ------------------------------------------------------------------ #
 
+    def get_my_permissions(self) -> MyPermissions:
+        """Read what the authenticated caller may do in this environment.
+
+        Works for a user token and for a Management API key of this environment. A
+        caller with no grants at all is a ``403``; a key of another environment is a
+        ``404 environment_not_found``.
+        """
+        data = self.request("GET", f"{self._my_permissions_root()}/")
+        return MyPermissions.model_validate(data)
+
     def list_management_roles(
         self, *, params: Mapping[str, Any] | None = None
     ) -> ManagementRoleList:
@@ -1367,6 +1457,31 @@ class ManagementClient(_ManagementPathsMixin):
         )
         return CollectionSummary.model_validate(data)
 
+    def patch_collection(
+        self, collection_key: CollectionRef, payload: Mapping[str, Any]
+    ) -> CollectionSummary:
+        """Write the given fields of a collection and leave the rest alone.
+
+        ``update_collection`` replaces the whole record; this does not. An omitted
+        ``parent`` keeps the collection where it is, and ``{"parent": None}`` moves
+        it to the root.
+
+        Args:
+            collection_key: Unique identifier of the collection.
+            payload: Only the fields to change.
+
+        Returns:
+            The whole collection as stored.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "PATCH",
+            f"{self._collections_tree_item()}/",
+            params={"key": collection_key},
+            json_body=payload,
+        )
+        return CollectionSummary.model_validate(data)
+
     def delete_collection(self, collection_key: CollectionRef) -> None:
         """Delete a collection.
 
@@ -1806,6 +1921,24 @@ class ManagementClient(_ManagementPathsMixin):
         component_key = _resolve_key(component_key)
         data = self.request(
             "PUT", f"{self._component_root(component_key)}/", json_body=payload
+        )
+        return ComponentSummary.model_validate(data)
+
+    def patch_component(
+        self, component_key: ComponentRef, payload: Mapping[str, Any]
+    ) -> ComponentSummary:
+        """Write the given fields of a component and leave the rest alone.
+
+        Args:
+            component_key: Unique identifier of the component.
+            payload: Only the fields to change.
+
+        Returns:
+            The whole component as stored.
+        """
+        component_key = _resolve_key(component_key)
+        data = self.request(
+            "PATCH", f"{self._component_root(component_key)}/", json_body=payload
         )
         return ComponentSummary.model_validate(data)
 
@@ -2878,6 +3011,328 @@ class ManagementClient(_ManagementPathsMixin):
         path = f"{self._revision_base(folder_key, resource_key)}/{revision_key}/data/"
         return self.request("GET", path)
 
+    # ------------------------------------------------------------------ #
+    # Files
+    # ------------------------------------------------------------------ #
+
+    def list_upload_links(
+        self,
+        collection_key: CollectionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> UploadLinkList:
+        """List a files collection's upload links, newest first.
+
+        Args:
+            collection_key: Key of the files collection.
+            params: Optional ``limit`` (at most 100), ``offset`` and ``state``:
+                ``active``, ``ended`` or ``all`` (the default).
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "GET", f"{self._upload_links_root(collection_key)}/", params=params
+        )
+        return UploadLinkList.model_validate(data)
+
+    def create_upload_link(
+        self,
+        collection_key: CollectionRef,
+        *,
+        owner: ResourceRef,
+        title: str,
+        instructions: str | None = None,
+        max_files: int | None = None,
+        allowed_kinds: Sequence[str] | None = None,
+        expires_in: int | None = None,
+    ) -> UploadLinkCreated:
+        """Create an upload link: a hosted page where an end user adds files.
+
+        The collection must be strict. Works with a user token or a Management API
+        key of this environment. Read the link back with :meth:`get_upload_link`;
+        the Flux upload status answers only for the Flux key that started an
+        upload, never for a link made here.
+
+        ``upload_url`` carries the link's token and is returned only by this call.
+
+        Args:
+            collection_key: Key of the files collection.
+            owner: The parent record that owns the uploaded files. The caller must
+                be able to read it.
+            title: Heading of the hosted page: 1 to 80 characters, one line.
+            instructions: Plain text under the heading, up to 500 characters.
+            max_files: How many files the link accepts, from 1 to 10 (default 1).
+            allowed_kinds: Narrows the collection's kinds for this link: any of
+                ``"image"``, ``"document"``, ``"archive"``.
+            expires_in: The link's lifetime in seconds, from 300 (5 minutes) to
+                86400 (24 hours). Without it, the link lasts 30 minutes.
+        """
+        collection_key = _resolve_key(collection_key)
+        body = _upload_link_body(
+            owner=owner,
+            title=title,
+            instructions=instructions,
+            max_files=max_files,
+            allowed_kinds=allowed_kinds,
+            expires_in=expires_in,
+        )
+        data = self._transport.request(
+            "POST",
+            f"{self._upload_links_root(collection_key)}/",
+            json_body=body,
+            allow_retries=False,
+        )
+        return UploadLinkCreated.model_validate(data)
+
+    def get_upload_link(
+        self, collection_key: CollectionRef, upload_id: str
+    ) -> UploadLink:
+        """Read one upload link with its sessions and the status of each file.
+
+        Args:
+            collection_key: Key of the files collection.
+            upload_id: The link's ``upload_id``.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "GET", f"{self._upload_link_root(collection_key, upload_id)}/"
+        )
+        return UploadLink.model_validate(data)
+
+    def revoke_upload_link(
+        self, collection_key: CollectionRef, upload_id: str
+    ) -> UploadLink:
+        """Revoke an upload link. Revoking a revoked link returns the same state.
+
+        Files already uploaded through the link are not affected.
+
+        Args:
+            collection_key: Key of the files collection.
+            upload_id: The link's ``upload_id``.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "POST", f"{self._upload_link_root(collection_key, upload_id)}/revoke/"
+        )
+        return UploadLink.model_validate(data)
+
+    def get_file_analysis(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Read a record's file: its verdict, the checks that ran and every finding.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/analysis/"
+        )
+        return FileRecordView.model_validate(data)
+
+    def approve_file(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Release a file held for a reviewer.
+
+        The answer's ``outcome`` says what happened; a publish that goes back
+        through processing completes on its own. A file no reviewer holds is
+        ``409 file_not_in_review``, ``file_not_ready`` or ``file_erased``.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self._transport.request(
+            "POST",
+            f"{self._file_root(collection_key, resource_key)}/approve/",
+            allow_retries=False,
+        )
+        return FileRecordView.model_validate(data)
+
+    def reject_file(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Reject a file held for a reviewer. Repeating it returns the same state.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self.request(
+            "POST", f"{self._file_root(collection_key, resource_key)}/reject/"
+        )
+        return FileRecordView.model_validate(data)
+
+    def reanalyze_file(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Analyze a file again under the collection's live policy.
+
+        Accepted work runs in the background; a published generation keeps serving
+        until the new one publishes. A ``storage_only`` collection answers
+        ``409 reanalysis_requires_agent_ready``. This is paid processing: a refusal
+        over the plan raises :class:`FilesQuotaExceeded`, a quota that cannot be read
+        raises :class:`FilesQuotaUnavailable`, and over a budget is ``429``.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self._transport.request(
+            "POST",
+            f"{self._file_root(collection_key, resource_key)}/reanalyze/",
+            allow_retries=False,
+        )
+        return FileRecordView.model_validate(data)
+
+    def get_file_original(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileDownload:
+        """Get a short-lived link to a record's original file.
+
+        A state that cannot be downloaded now is a ``409``: ``detail["reason"]`` of
+        the raised error names it. Check ``warnings`` before opening the file.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/file/original/"
+        )
+        return FileDownload.model_validate(data)
+
+    def get_file_safe_copy(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileDownload:
+        """Get a short-lived link to a record's safe copy.
+
+        It is an image-only PDF, or a PNG for an image: read ``content_type``.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/file/safe-copy/"
+        )
+        return FileDownload.model_validate(data)
+
+    def get_file_page(
+        self, collection_key: CollectionRef, resource_key: ResourceRef, page: int
+    ) -> FileDownload:
+        """Get a short-lived link to the redacted PNG of one page.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+            page: Page number.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/file/pages/{page}/"
+        )
+        return FileDownload.model_validate(data)
+
+    def get_file_page_detail(
+        self, collection_key: CollectionRef, resource_key: ResourceRef, page: int
+    ) -> FilePageDetail:
+        """Read one page: its redacted image, what was withheld, its tables and the
+        text an agent receives.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+            page: Page number.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        root = self._file_root(collection_key, resource_key)
+        data = self.request("GET", f"{root}/file/pages/{page}/detail/")
+        return FilePageDetail.model_validate(data)
+
+    def list_file_tombstones(
+        self,
+        collection_key: CollectionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> FileTombstoneList:
+        """List a collection's blocked and rejected files, newest first.
+
+        Args:
+            collection_key: Key of the files collection.
+            params: Optional ``limit`` (at most 100) and ``offset``.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "GET", f"{self._file_tombstones_root(collection_key)}/", params=params
+        )
+        return FileTombstoneList.model_validate(data)
+
+    def get_files_policy(self, collection_key: CollectionRef) -> FilesPolicy:
+        """Read a collection's live files policy.
+
+        Args:
+            collection_key: Key of the files collection.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request("GET", f"{self._files_policy_root(collection_key)}/")
+        return FilesPolicy.model_validate(data)
+
+    def update_files_policy(
+        self,
+        collection_key: CollectionRef,
+        payload: FilesPolicyBody | Mapping[str, Any],
+    ) -> FilesPolicy:
+        """Replace a collection's files policy with a new version.
+
+        A full replacement: an omitted field takes its default. Sending the live
+        body again creates no version.
+
+        Args:
+            collection_key: Key of the files collection.
+            payload: The policy body.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = self.request(
+            "PUT",
+            f"{self._files_policy_root(collection_key)}/",
+            json_body=_files_policy_body(payload),
+        )
+        return FilesPolicy.model_validate(data)
+
+    def list_file_review_queue(
+        self,
+        *,
+        collection: CollectionRef | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> FileReviewQueue:
+        """List the files held for a reviewer in this environment, newest first.
+
+        Args:
+            collection: Narrows the queue to one collection. One the caller cannot
+                read, or that does not exist, is an empty page.
+            params: Optional ``limit`` (at most 100) and ``offset``.
+        """
+        query = dict(params or {})
+        if collection is not None:
+            query["collection"] = _resolve_key(collection)
+        data = self.request("GET", f"{self._files_review_root()}/", params=query)
+        return FileReviewQueue.model_validate(data)
+
     def close(self) -> None:
         """Close the HTTP transport and release resources."""
         self._transport.close()
@@ -2948,6 +3403,24 @@ class AsyncManagementClient(_ManagementPathsMixin):
         org_key = _resolve_key(org_key)
         data = await self.request(
             "PUT", f"{self._org_root(org_key)}/", json_body=payload
+        )
+        return OrganizationSummary.model_validate(data)
+
+    async def patch_organization(
+        self, org_key: OrgRef, payload: Mapping[str, Any]
+    ) -> OrganizationSummary:
+        """Write the given fields of an organization and leave the rest alone.
+
+        Args:
+            org_key: Unique identifier of the organization.
+            payload: Only the fields to change.
+
+        Returns:
+            The whole organization as stored.
+        """
+        org_key = _resolve_key(org_key)
+        data = await self.request(
+            "PATCH", f"{self._org_root(org_key)}/", json_body=payload
         )
         return OrganizationSummary.model_validate(data)
 
@@ -3320,6 +3793,16 @@ class AsyncManagementClient(_ManagementPathsMixin):
     # Management role operations
     # ------------------------------------------------------------------ #
 
+    async def get_my_permissions(self) -> MyPermissions:
+        """Read what the authenticated caller may do in this environment.
+
+        Works for a user token and for a Management API key of this environment. A
+        caller with no grants at all is a ``403``; a key of another environment is a
+        ``404 environment_not_found``.
+        """
+        data = await self.request("GET", f"{self._my_permissions_root()}/")
+        return MyPermissions.model_validate(data)
+
     async def list_management_roles(
         self, *, params: Mapping[str, Any] | None = None
     ) -> ManagementRoleList:
@@ -3629,6 +4112,31 @@ class AsyncManagementClient(_ManagementPathsMixin):
         )
         return CollectionSummary.model_validate(data)
 
+    async def patch_collection(
+        self, collection_key: CollectionRef, payload: Mapping[str, Any]
+    ) -> CollectionSummary:
+        """Write the given fields of a collection and leave the rest alone.
+
+        ``update_collection`` replaces the whole record; this does not. An omitted
+        ``parent`` keeps the collection where it is, and ``{"parent": None}`` moves
+        it to the root.
+
+        Args:
+            collection_key: Unique identifier of the collection.
+            payload: Only the fields to change.
+
+        Returns:
+            The whole collection as stored.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "PATCH",
+            f"{self._collections_tree_item()}/",
+            params={"key": collection_key},
+            json_body=payload,
+        )
+        return CollectionSummary.model_validate(data)
+
     async def delete_collection(self, collection_key: CollectionRef) -> None:
         collection_key = _resolve_key(collection_key)
         await self.request(
@@ -3742,6 +4250,24 @@ class AsyncManagementClient(_ManagementPathsMixin):
             "PUT",
             f"{self._component_root(component_key)}/",
             json_body=payload,
+        )
+        return ComponentSummary.model_validate(data)
+
+    async def patch_component(
+        self, component_key: ComponentRef, payload: Mapping[str, Any]
+    ) -> ComponentSummary:
+        """Write the given fields of a component and leave the rest alone.
+
+        Args:
+            component_key: Unique identifier of the component.
+            payload: Only the fields to change.
+
+        Returns:
+            The whole component as stored.
+        """
+        component_key = _resolve_key(component_key)
+        data = await self.request(
+            "PATCH", f"{self._component_root(component_key)}/", json_body=payload
         )
         return ComponentSummary.model_validate(data)
 
@@ -4809,6 +5335,328 @@ class AsyncManagementClient(_ManagementPathsMixin):
             "GET",
             f"{self._revision_base(folder_key, resource_key)}/{revision_key}/data/",
         )
+
+    # ------------------------------------------------------------------ #
+    # Files
+    # ------------------------------------------------------------------ #
+
+    async def list_upload_links(
+        self,
+        collection_key: CollectionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> UploadLinkList:
+        """List a files collection's upload links, newest first.
+
+        Args:
+            collection_key: Key of the files collection.
+            params: Optional ``limit`` (at most 100), ``offset`` and ``state``:
+                ``active``, ``ended`` or ``all`` (the default).
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "GET", f"{self._upload_links_root(collection_key)}/", params=params
+        )
+        return UploadLinkList.model_validate(data)
+
+    async def create_upload_link(
+        self,
+        collection_key: CollectionRef,
+        *,
+        owner: ResourceRef,
+        title: str,
+        instructions: str | None = None,
+        max_files: int | None = None,
+        allowed_kinds: Sequence[str] | None = None,
+        expires_in: int | None = None,
+    ) -> UploadLinkCreated:
+        """Create an upload link: a hosted page where an end user adds files.
+
+        The collection must be strict. Works with a user token or a Management API
+        key of this environment. Read the link back with :meth:`get_upload_link`;
+        the Flux upload status answers only for the Flux key that started an
+        upload, never for a link made here.
+
+        ``upload_url`` carries the link's token and is returned only by this call.
+
+        Args:
+            collection_key: Key of the files collection.
+            owner: The parent record that owns the uploaded files. The caller must
+                be able to read it.
+            title: Heading of the hosted page: 1 to 80 characters, one line.
+            instructions: Plain text under the heading, up to 500 characters.
+            max_files: How many files the link accepts, from 1 to 10 (default 1).
+            allowed_kinds: Narrows the collection's kinds for this link: any of
+                ``"image"``, ``"document"``, ``"archive"``.
+            expires_in: The link's lifetime in seconds, from 300 (5 minutes) to
+                86400 (24 hours). Without it, the link lasts 30 minutes.
+        """
+        collection_key = _resolve_key(collection_key)
+        body = _upload_link_body(
+            owner=owner,
+            title=title,
+            instructions=instructions,
+            max_files=max_files,
+            allowed_kinds=allowed_kinds,
+            expires_in=expires_in,
+        )
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._upload_links_root(collection_key)}/",
+            json_body=body,
+            allow_retries=False,
+        )
+        return UploadLinkCreated.model_validate(data)
+
+    async def get_upload_link(
+        self, collection_key: CollectionRef, upload_id: str
+    ) -> UploadLink:
+        """Read one upload link with its sessions and the status of each file.
+
+        Args:
+            collection_key: Key of the files collection.
+            upload_id: The link's ``upload_id``.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "GET", f"{self._upload_link_root(collection_key, upload_id)}/"
+        )
+        return UploadLink.model_validate(data)
+
+    async def revoke_upload_link(
+        self, collection_key: CollectionRef, upload_id: str
+    ) -> UploadLink:
+        """Revoke an upload link. Revoking a revoked link returns the same state.
+
+        Files already uploaded through the link are not affected.
+
+        Args:
+            collection_key: Key of the files collection.
+            upload_id: The link's ``upload_id``.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "POST", f"{self._upload_link_root(collection_key, upload_id)}/revoke/"
+        )
+        return UploadLink.model_validate(data)
+
+    async def get_file_analysis(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Read a record's file: its verdict, the checks that ran and every finding.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/analysis/"
+        )
+        return FileRecordView.model_validate(data)
+
+    async def approve_file(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Release a file held for a reviewer.
+
+        The answer's ``outcome`` says what happened; a publish that goes back
+        through processing completes on its own. A file no reviewer holds is
+        ``409 file_not_in_review``, ``file_not_ready`` or ``file_erased``.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._file_root(collection_key, resource_key)}/approve/",
+            allow_retries=False,
+        )
+        return FileRecordView.model_validate(data)
+
+    async def reject_file(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Reject a file held for a reviewer. Repeating it returns the same state.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self.request(
+            "POST", f"{self._file_root(collection_key, resource_key)}/reject/"
+        )
+        return FileRecordView.model_validate(data)
+
+    async def reanalyze_file(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileRecordView:
+        """Analyze a file again under the collection's live policy.
+
+        Accepted work runs in the background; a published generation keeps serving
+        until the new one publishes. A ``storage_only`` collection answers
+        ``409 reanalysis_requires_agent_ready``. This is paid processing: a refusal
+        over the plan raises :class:`FilesQuotaExceeded`, a quota that cannot be read
+        raises :class:`FilesQuotaUnavailable`, and over a budget is ``429``.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self._transport.arequest(
+            "POST",
+            f"{self._file_root(collection_key, resource_key)}/reanalyze/",
+            allow_retries=False,
+        )
+        return FileRecordView.model_validate(data)
+
+    async def get_file_original(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileDownload:
+        """Get a short-lived link to a record's original file.
+
+        A state that cannot be downloaded now is a ``409``: ``detail["reason"]`` of
+        the raised error names it. Check ``warnings`` before opening the file.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/file/original/"
+        )
+        return FileDownload.model_validate(data)
+
+    async def get_file_safe_copy(
+        self, collection_key: CollectionRef, resource_key: ResourceRef
+    ) -> FileDownload:
+        """Get a short-lived link to a record's safe copy.
+
+        It is an image-only PDF, or a PNG for an image: read ``content_type``.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/file/safe-copy/"
+        )
+        return FileDownload.model_validate(data)
+
+    async def get_file_page(
+        self, collection_key: CollectionRef, resource_key: ResourceRef, page: int
+    ) -> FileDownload:
+        """Get a short-lived link to the redacted PNG of one page.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+            page: Page number.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        data = await self.request(
+            "GET", f"{self._file_root(collection_key, resource_key)}/file/pages/{page}/"
+        )
+        return FileDownload.model_validate(data)
+
+    async def get_file_page_detail(
+        self, collection_key: CollectionRef, resource_key: ResourceRef, page: int
+    ) -> FilePageDetail:
+        """Read one page: its redacted image, what was withheld, its tables and the
+        text an agent receives.
+
+        Args:
+            collection_key: Key of the files collection.
+            resource_key: Key of the record.
+            page: Page number.
+        """
+        collection_key = _resolve_key(collection_key)
+        resource_key = _resolve_key(resource_key)
+        root = self._file_root(collection_key, resource_key)
+        data = await self.request("GET", f"{root}/file/pages/{page}/detail/")
+        return FilePageDetail.model_validate(data)
+
+    async def list_file_tombstones(
+        self,
+        collection_key: CollectionRef,
+        *,
+        params: Mapping[str, Any] | None = None,
+    ) -> FileTombstoneList:
+        """List a collection's blocked and rejected files, newest first.
+
+        Args:
+            collection_key: Key of the files collection.
+            params: Optional ``limit`` (at most 100) and ``offset``.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "GET", f"{self._file_tombstones_root(collection_key)}/", params=params
+        )
+        return FileTombstoneList.model_validate(data)
+
+    async def get_files_policy(self, collection_key: CollectionRef) -> FilesPolicy:
+        """Read a collection's live files policy.
+
+        Args:
+            collection_key: Key of the files collection.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request("GET", f"{self._files_policy_root(collection_key)}/")
+        return FilesPolicy.model_validate(data)
+
+    async def update_files_policy(
+        self,
+        collection_key: CollectionRef,
+        payload: FilesPolicyBody | Mapping[str, Any],
+    ) -> FilesPolicy:
+        """Replace a collection's files policy with a new version.
+
+        A full replacement: an omitted field takes its default. Sending the live
+        body again creates no version.
+
+        Args:
+            collection_key: Key of the files collection.
+            payload: The policy body.
+        """
+        collection_key = _resolve_key(collection_key)
+        data = await self.request(
+            "PUT",
+            f"{self._files_policy_root(collection_key)}/",
+            json_body=_files_policy_body(payload),
+        )
+        return FilesPolicy.model_validate(data)
+
+    async def list_file_review_queue(
+        self,
+        *,
+        collection: CollectionRef | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> FileReviewQueue:
+        """List the files held for a reviewer in this environment, newest first.
+
+        Args:
+            collection: Narrows the queue to one collection. One the caller cannot
+                read, or that does not exist, is an empty page.
+            params: Optional ``limit`` (at most 100) and ``offset``.
+        """
+        query = dict(params or {})
+        if collection is not None:
+            query["collection"] = _resolve_key(collection)
+        data = await self.request("GET", f"{self._files_review_root()}/", params=query)
+        return FileReviewQueue.model_validate(data)
 
     async def aclose(self) -> None:
         await self._transport.aclose()

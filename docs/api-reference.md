@@ -272,3 +272,136 @@ from foxnose_sdk import FolderRef, ResourceRef, RevisionRef
       show_source: false
       heading_level: 4
       members: false
+
+### Files
+
+::: foxnose_sdk.management.models.UploadLink
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.UploadLinkCreated
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.UploadLinkSession
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.UploadLinkFile
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileRecordView
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileAnalysis
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileCheck
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileFinding
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileTextEvidence
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.FileTrust
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.management.models.FileDownload
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FilePageDetail
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileTombstone
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FileReviewItem
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FilesPolicy
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+
+::: foxnose_sdk.management.models.FilesPolicyBody
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+### Permissions
+
+::: foxnose_sdk.management.models.MyPermissions
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+### File Uploads
+
+::: foxnose_sdk.flux.models.UploadSignature
+    options:
+      show_source: false
+      heading_level: 4
+      members: false
+
+::: foxnose_sdk.flux.models.UploadStatus
+    options:
+      show_source: false
+      heading_level: 4
+      members: false

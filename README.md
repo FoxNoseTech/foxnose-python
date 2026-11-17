@@ -18,6 +18,7 @@ This is the official Python SDK for FoxNose Management and Flux APIs.
 - **Automatic retries** - Configurable retry with exponential backoff
 - **JWT authentication** - Built-in token refresh support
 - **Flux introspection** - Discover routes and live schema via `/_router` and `/_schema`
+- **FoxNose Files** - Upload links, analysis, review, policy and short-lived downloads
 
 ## Documentation
 
@@ -188,6 +189,54 @@ client.update_resource("blog-posts", created["resource_key"], {"title": "Hello (
 
 client.close()
 ```
+
+### Files
+
+FoxNose Files takes uploads from end users and processes them for agents. Upload links and review run through the Management client, in sync and async alike.
+
+```python
+# A hosted page for an end user. The collection must be strict, and `owner` is
+# the parent record. Works with a user token or a Management API key.
+link = client.create_upload_link(
+    "attachments",
+    owner="tk_8f2c91",
+    title="Upload your documents",
+    max_files=3,
+)
+send_to_user(link.upload_url)  # returned once; no later read reproduces it
+
+# Read the link back through the Management API.
+link = client.get_upload_link("attachments", link.upload_id)
+keys = [f.record_key for s in link.sessions for f in s.files if f.state == "ready"]
+
+# The record's verdict, checks and findings.
+view = client.get_file_analysis("attachments", keys[0])
+
+# A download is a short-lived link. It is returned, never streamed.
+safe_copy = client.get_file_safe_copy("attachments", keys[0])
+print(safe_copy.url, safe_copy.expires_at)
+```
+
+| Call | What it does |
+|---|---|
+| `list_upload_links` / `create_upload_link` / `get_upload_link` / `revoke_upload_link` | Upload links of a collection |
+| `get_file_analysis` | A record's file, verdict, checks and findings; `text_evidence` reads a finding's text |
+| `approve_file` / `reject_file` / `reanalyze_file` | Decide on a held file, or analyze a file again |
+| `get_file_original` / `get_file_safe_copy` / `get_file_page` | A short-lived link to one copy |
+| `get_file_page_detail` | One page: redacted image, withheld regions, tables and text |
+| `list_file_tombstones` | Blocked and rejected files |
+| `get_files_policy` / `update_files_policy` | The collection's policy |
+| `list_file_review_queue` | Files held for a reviewer in the environment |
+| `get_my_permissions` | What the caller may do in the environment |
+
+On the Flux client, a key takes a grant for one upload and polls it:
+
+```python
+grant = flux.create_upload_signature("tickets/tk_8f2c91/attachments")
+status = flux.get_upload_status("tickets/tk_8f2c91/attachments", grant.upload_id)
+```
+
+The grant is a credential: `repr()` leaves its tokens out, and it should stay out of logs. Flux status answers only the Flux key that started the upload, so a link made through the Management API is read with `get_upload_link`. See the [Management client](https://foxnose-python.readthedocs.io/en/latest/management-client/#files) and [Flux client](https://foxnose-python.readthedocs.io/en/latest/flux-client/#file-uploads) guides.
 
 ## Development
 

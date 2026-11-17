@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from ..auth import AuthStrategy
 from ..config import FoxnoseConfig, RetryConfig
@@ -10,6 +11,8 @@ from .models import (
     HybridConfig,
     SearchMode,
     SearchRequest,
+    UploadSignature,
+    UploadStatus,
     VectorBoostConfig,
     VectorFieldSearch,
     VectorSearch,
@@ -44,6 +47,18 @@ def _clean_prefix(prefix: str) -> str:
 
 def _normalize_folder_path(folder_path: str) -> str:
     return folder_path.strip("/")
+
+
+def _upload_status_suffix(upload_id: str) -> str:
+    return f"/_uploads/{quote(upload_id, safe='')}"
+
+
+def _upload_signature_body(session_key: str | None) -> dict[str, str] | None:
+    return None if session_key is None else {"session_key": session_key}
+
+
+def _upload_status_headers(status_token: str | None) -> dict[str, str] | None:
+    return None if status_token is None else {"X-Upload-Status-Token": status_token}
 
 
 class FluxClient:
@@ -184,6 +199,69 @@ class FluxClient:
         return self._transport.request(
             "PUT", path, json_body={"data": dict(data)}, allow_retries=False
         )
+
+    def create_upload_signature(
+        self,
+        folder_path: str,
+        *,
+        session_key: str | None = None,
+    ) -> UploadSignature:
+        """Get a grant for one upload to a files collection.
+
+        The grant is a credential: pass it on, do not log it.
+
+        Args:
+            folder_path: Path of the files collection. For a strict collection it
+                names the owner, e.g. ``"support/tickets/tk_1/attachments"``.
+            session_key: Optional idempotency key of 43 URL-safe characters. A
+                repeat with the same key, collection and owner reaches the same
+                upload session.
+
+        Returns:
+            The :class:`UploadSignature`, with the ``upload_id`` to poll and the
+            end user's ``status_token``.
+
+        Note:
+            Needs a key with create access to the collection. A failed request is
+            never retried automatically; to retry one safely, send a
+            ``session_key``.
+        """
+        path = self._build_path(folder_path, suffix="/_upload-signature")
+        data = self._transport.request(
+            "POST",
+            path,
+            json_body=_upload_signature_body(session_key),
+            allow_retries=False,
+        )
+        return UploadSignature.model_validate(data)
+
+    def get_upload_status(
+        self,
+        folder_path: str,
+        upload_id: str,
+        *,
+        status_token: str | None = None,
+    ) -> UploadStatus:
+        """Read the status of an upload.
+
+        A key reads the uploads that key started, and the path must name the same
+        collection and owner. Any other combination is ``404 not_found``, which
+        includes a link made through the Management API: read that one with
+        ``ManagementClient.get_upload_link``.
+
+        Args:
+            folder_path: Path of the files collection.
+            upload_id: The upload's id.
+            status_token: The end user's token from the grant, for a client that
+                holds no key (use ``AnonymousAuth``). It answers the end user's
+                view, which never carries a record key. A request authenticated
+                by a key ignores it.
+        """
+        path = self._build_path(folder_path, suffix=_upload_status_suffix(upload_id))
+        data = self._transport.request(
+            "GET", path, headers=_upload_status_headers(status_token)
+        )
+        return UploadStatus.model_validate(data)
 
     def vector_search(
         self,
@@ -499,6 +577,69 @@ class AsyncFluxClient:
         return await self._transport.arequest(
             "PUT", path, json_body={"data": dict(data)}, allow_retries=False
         )
+
+    async def create_upload_signature(
+        self,
+        folder_path: str,
+        *,
+        session_key: str | None = None,
+    ) -> UploadSignature:
+        """Get a grant for one upload to a files collection.
+
+        The grant is a credential: pass it on, do not log it.
+
+        Args:
+            folder_path: Path of the files collection. For a strict collection it
+                names the owner, e.g. ``"support/tickets/tk_1/attachments"``.
+            session_key: Optional idempotency key of 43 URL-safe characters. A
+                repeat with the same key, collection and owner reaches the same
+                upload session.
+
+        Returns:
+            The :class:`UploadSignature`, with the ``upload_id`` to poll and the
+            end user's ``status_token``.
+
+        Note:
+            Needs a key with create access to the collection. A failed request is
+            never retried automatically; to retry one safely, send a
+            ``session_key``.
+        """
+        path = self._build_path(folder_path, suffix="/_upload-signature")
+        data = await self._transport.arequest(
+            "POST",
+            path,
+            json_body=_upload_signature_body(session_key),
+            allow_retries=False,
+        )
+        return UploadSignature.model_validate(data)
+
+    async def get_upload_status(
+        self,
+        folder_path: str,
+        upload_id: str,
+        *,
+        status_token: str | None = None,
+    ) -> UploadStatus:
+        """Read the status of an upload.
+
+        A key reads the uploads that key started, and the path must name the same
+        collection and owner. Any other combination is ``404 not_found``, which
+        includes a link made through the Management API: read that one with
+        ``AsyncManagementClient.get_upload_link``.
+
+        Args:
+            folder_path: Path of the files collection.
+            upload_id: The upload's id.
+            status_token: The end user's token from the grant, for a client that
+                holds no key (use ``AnonymousAuth``). It answers the end user's
+                view, which never carries a record key. A request authenticated
+                by a key ignores it.
+        """
+        path = self._build_path(folder_path, suffix=_upload_status_suffix(upload_id))
+        data = await self._transport.arequest(
+            "GET", path, headers=_upload_status_headers(status_token)
+        )
+        return UploadStatus.model_validate(data)
 
     async def vector_search(
         self,

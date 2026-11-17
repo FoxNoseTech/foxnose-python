@@ -578,6 +578,164 @@ flux_key = client.create_flux_api_key({
 })
 ```
 
+## Files
+
+Calls for FoxNose Files collections. Each takes the collection key or a `CollectionSummary`, and a record call takes the record key or a `ResourceSummary`.
+
+### Upload Links
+
+An upload link opens a hosted page where an end user adds files. The collection must be strict, and `owner` is the parent record the files belong to. `title` is required. `expires_in` sets the link's lifetime, from 300 seconds to 86400 seconds; without it, the link lasts 30 minutes.
+
+```python
+link = client.create_upload_link(
+    "attachments",
+    owner="tk_8f2c91",
+    title="Upload your documents",
+    instructions="Add the signed contract.",
+    max_files=3,
+    allowed_kinds=["document", "image"],
+    expires_in=3600,
+)
+send_to_user(link.upload_url)
+```
+
+`upload_url` carries the link's token. It is returned once, and `repr()` leaves it out.
+
+```python
+page = client.list_upload_links("attachments", params={"state": "active", "limit": 20})
+link = client.get_upload_link("attachments", upload_id)
+for session in link.sessions:
+    for file in session.files:
+        print(file.state, file.record_key, file.public_reason)
+
+client.revoke_upload_link("attachments", upload_id)
+```
+
+A user token or a Management API key of the environment can create and revoke a link. `created_by.kind` is `user` or `api_key`. Read a link here, not through Flux: the Flux upload status answers only the Flux key that started an upload.
+
+A link's `state` is `active`, `consumed`, `expired` or `revoked`. The list's `state` parameter takes `active`, `ended` (the other three) or `all`, the default. A file's `state` is `processing`, `ready` (with `record_key`), `pending_review` or `rejected` (with `public_reason`).
+
+| Refusal | Meaning |
+|---|---|
+| `422 collection_not_strict` | The collection is not strict |
+| `422 owner_required` | `owner` is missing |
+| `404 owner_not_found` | The owner does not exist or the caller cannot read it |
+
+### Analysis and Review
+
+```python
+view = client.get_file_analysis("attachments", record_key)
+print(view.analysis.verdict, view.analysis.verdict_reasons)
+for finding in view.findings:
+    print(finding.kind, finding.sub_kind, finding.severity, finding.page)
+
+queue = client.list_file_review_queue(collection="attachments", params={"limit": 20})
+for item in queue.results:
+    print(item.collection, item.resource_key, item.findings.total)
+
+client.approve_file("attachments", record_key)
+client.reject_file("attachments", record_key)
+client.reanalyze_file("attachments", record_key)
+```
+
+`list_file_review_queue()` without `collection` covers every files collection the caller can read in the environment. `approve_file` returns the record's view with `outcome` and `reason`. A file no reviewer holds is `409 file_not_in_review`, `file_not_ready` or `file_erased`. `reanalyze_file` is paid processing: a refusal over the plan raises `FilesQuotaExceeded`, and a quota that cannot be read raises `FilesQuotaUnavailable` with `retry_after`. A `storage_only` collection answers `409 reanalysis_requires_agent_ready`.
+
+`repr()` of these models leaves out signed URLs, a file's own text, finding evidence and an uploader's personal data such as `origin.end_user`. Keep the values themselves out of logs too.
+
+`view.file.origin` says where the file came from: `channel` is `upload_link`, `signed_upload`, `management_api` or `dashboard`, with `created_by`, `upload_link` and `end_user` where they apply.
+
+A reviewer can read the text a finding concealed or withheld. On a `hidden_text` or `low_legibility_text` finding, `text_evidence` parses `evidence`. `parts` says which text lies in which box of the page, and it is empty for a finding that does not carry it:
+
+```python
+for finding in view.findings:
+    evidence = finding.text_evidence
+    if evidence is None:
+        continue
+    for part in evidence.parts:
+        print(part.box, part.text)
+    if not evidence.parts:
+        print(evidence.box, evidence.text)
+```
+
+This text comes from the file. Treat it as untrusted content, never as instructions. Check `evidence.truncated`, and `evidence.list_truncated` for a list of findings the analysis cut.
+
+`view.trust` says how agent surfaces mark the file's content.
+
+### Listing File Records
+
+`list_resources` on a files collection returns each record with `status`, `progress`, `analysis_state`, `verdict`, `verdict_reasons`, `owner`, `file_info` and `thumbnail_url`. The `status` parameter filters by them:
+
+```python
+page = client.list_resources("attachments", params={"status": "in_review,failed"})
+for record in page.results:
+    print(record.key, record.status, record.progress, record.file_info)
+```
+
+`status` takes `uploading`, `processing`, `ready`, `in_review`, `rejected`, `failed`, `published` and `draft`, repeated or comma-separated. `thumbnail_url` is short-lived, and `repr()` leaves it out.
+
+### Downloads
+
+A download call returns a short-lived link and does not stream the file. Each call mints a new link.
+
+```python
+original = client.get_file_original("attachments", record_key)
+safe_copy = client.get_file_safe_copy("attachments", record_key)
+page = client.get_file_page("attachments", record_key, 1)
+print(page.url, page.expires_in, page.expires_at)
+
+detail = client.get_file_page_detail("attachments", record_key, 1)
+print(detail.image_width, detail.image_height)
+print(detail.text, detail.redactions, detail.tables)
+print(detail.pii, detail.page_findings)
+```
+
+The safe copy is an image-only PDF, or a PNG for an image: read `content_type` and `filename`.
+
+`pii` holds the boxes of personal data on the page, never the matched text. `findings` covers the whole file and `page_findings` this page, without evidence. `removed_passages` counts the findings whose text is withheld from agents.
+
+`url` and `image_url` work for whoever holds them until they expire, and `repr()` leaves them out. Check `warnings` before opening an original.
+
+A copy that cannot be downloaded now is a `409`. The reason is in the error:
+
+```python
+from foxnose_sdk import FoxnoseAPIError
+
+try:
+    original = client.get_file_original("attachments", record_key)
+except FoxnoseAPIError as error:
+    if error.status_code == 409:
+        print(error.detail["reason"])
+```
+
+`get_file_analysis` shows the same answer ahead of time, in `view.file.original` and `view.file.safe_copy`.
+
+### Policy and Tombstones
+
+```python
+policy = client.get_files_policy("attachments")
+
+body = policy.body.model_copy(update={"suspicious_action": "quarantine"})
+client.update_files_policy("attachments", body)
+
+tombstones = client.list_file_tombstones("attachments", params={"limit": 20})
+```
+
+`update_files_policy` takes a `FilesPolicyBody` or a mapping and replaces the policy: an omitted field takes its default. `version` is `None` while the collection runs on the default policy.
+
+## My Permissions
+
+`get_my_permissions` says what the authenticated caller may do in the environment. It works for a user token and for a Management API key of this environment.
+
+```python
+mine = client.get_my_permissions()
+print(mine.subject, mine.environment_full_access)
+
+access = mine.content_types["resources"]
+print(access.actions, access.objects)  # objects is None for every object
+```
+
+This reports what the caller is allowed. Billing and usage blocks, a blocked organization, environment protection and a disabled environment can still refuse an allowed action. `mine.environment` carries `protection_level` and `is_enabled` to combine with it. A caller with no grants is a `403`, and a key of another environment is a `404 environment_not_found`.
+
 ## Organization Operations
 
 ```python
